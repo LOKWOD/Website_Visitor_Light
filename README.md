@@ -2,13 +2,23 @@
 
 ESP32-S3 website visitor indicator using the onboard WS2812 RGB LED on GPIO 48.
 
-## Current stable firmware: v1.1.4
+## OTA test release: v1.1.5
+
+v1.1.5 is intentionally a tiny release so the automatic update path can be tested end to end.
+
+The only visible v1.1.5 change is:
+
+- Add **Dish Gal** to the dashboard **Site colors** list with a blank/unassigned outlined swatch.
+
+No visitor polling, RGB notification, Wi-Fi recovery, password, login, Cloudflare, or OTA behavior is intentionally changed in v1.1.5.
+
+## v1.1.4 features retained
 
 v1.1.4 keeps the v1.1.3 hands-off GitHub firmware updater and adds saveable local passwords plus a normal rememberable dashboard login.
 
 ### Saveable passwords and dashboard login
 
-- The dashboard now has a **Security settings** card.
+- The dashboard has a **Security settings** card.
 - Dashboard, setup-AP, and Arduino OTA passwords can be changed from the local dashboard.
 - Passwords are stored in ESP32 nonvolatile `Preferences` and survive power cycles, restarts, and future firmware updates.
 - Leave a password field blank to keep its current value.
@@ -16,7 +26,7 @@ v1.1.4 keeps the v1.1.3 hands-off GitHub firmware updater and adds saveable loca
 - Dashboard username remains `admin`.
 - The old browser Basic-Auth popup is replaced by a normal HTML login form using standard password-manager/autofill fields.
 - **Remember me on this device** creates a persistent browser session for up to 30 days.
-- The remembered server-side session token is also stored on the ESP32, so the login can survive ESP32 restarts and firmware updates.
+- The remembered server-side session token is stored on the ESP32, so the login can survive ESP32 restarts and firmware updates.
 - Changing the dashboard password rotates the session token and invalidates previously remembered browser sessions.
 - A **Sign out** button is available under Maintenance.
 
@@ -31,7 +41,7 @@ v1.1.4 keeps the v1.1.3 hands-off GitHub firmware updater and adds saveable loca
 - The dashboard shows the installed version, latest release, update status, and includes a **Check for firmware update** button.
 - The repository workflow builds `LOKWOD_Visitor_Light.bin` and automatically publishes a GitHub Release for a new stable firmware version.
 
-**Important:** a device on v1.1.3 can receive v1.1.4 automatically. A device still on v1.1.2 or earlier should use the v1.1.4 USB bridge installer once; normal later releases can then install themselves.
+A device running v1.1.3 or v1.1.4 can receive v1.1.5 automatically once the v1.1.5 release is published. A device still on v1.1.2 or earlier needs the auto-update bridge installed once first.
 
 ### Persistent private device configuration
 
@@ -49,7 +59,7 @@ Public GitHub release binaries do not contain private device credentials. The v1
 
 ## Firmware project
 
-The PlatformIO project is under `firmware/`. The repository currently retains the v1.1.3 baseline source plus the compatibility patch used to build the v1.1.4 stable release.
+The PlatformIO project is under `firmware/`. The repository retains the v1.1.3 baseline source plus a compatibility patch used by the release workflow before preparing the current release.
 
 ```text
 firmware/
