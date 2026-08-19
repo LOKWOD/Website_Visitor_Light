@@ -1,0 +1,24 @@
+name: Build visitor light firmware
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install PlatformIO
+        run: pip install platformio
+      - name: Supply non-secret CI configuration
+        run: cp firmware/include/secrets.example.h firmware/include/secrets.h
+      - name: Compile ESP32-S3 firmware
+        run: pio run -d firmware -e esp32-s3-devkitc-1
