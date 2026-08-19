@@ -1,0 +1,109 @@
+--- a/firmware/src/main.cpp
++++ b/firmware/src/main.cpp
+@@ -36,7 +36,6 @@
+ constexpr uint8_t kConnectRetries = 3;
+ constexpr uint32_t kNtpRetryMs = 15000;
+ constexpr uint32_t kHttpTimeoutMs = 8000;
+-constexpr char kLatestReleaseApi[] = "https://api.github.com/repos/LOKWOD/Website_Visitor_Light/releases/latest";
+ constexpr char kFirmwareAssetName[] = "LOKWOD_Visitor_Light.bin";
+ constexpr uint32_t kAutoUpdateFirstCheckMs = 45000;
+ constexpr uint32_t kAutoUpdateIntervalMs = 6UL * 60UL * 60UL * 1000UL;
+@@ -633,21 +632,20 @@
+ }
+ 
+ bool fetchLatestFirmwareRelease(String &version, String &downloadUrl) {
+-  autoUpdateStatus = "Checking GitHub for firmware updates...";
++  autoUpdateStatus = "Checking Cloudflare for firmware updates...";
+ 
+-  LokwodSecureClient secureClient;
+-  secureClient.setCACert(LOKWOD_TRUSTED_ROOTS);
+-  secureClient.setHandshakeTimeout(12);
++  if (workerBaseUrl.length() == 0 || deviceToken.length() < 32) {
++    autoUpdateStatus = "Update service unavailable until Worker configuration is ready.";
++    return false;
++  }
+ 
++  LokwodSecureClient secureClient;
+   HTTPClient http;
+-  http.setTimeout(AppConfig::kHttpTimeoutMs);
+-  http.setUserAgent(String("LOKWOD-Visitor-Light/") + AppConfig::kFirmwareVersion);
+-  http.addHeader("Accept", "application/vnd.github+json");
+-  http.addHeader("Cache-Control", "no-cache");
+-  if (!http.begin(secureClient, AppConfig::kLatestReleaseApi)) {
+-    autoUpdateStatus = "Update check could not initialize HTTPS.";
++  if (!beginSecureRequest(secureClient, http, workerBaseUrl + "/v1/firmware/latest")) {
++    autoUpdateStatus = "Update check could not initialize Worker HTTPS.";
+     return false;
+   }
++  http.addHeader("Cache-Control", "no-cache");
+ 
+   const int status = http.GET();
+   if (status == HTTP_CODE_NOT_FOUND) {
+@@ -656,7 +654,7 @@
+     return true;
+   }
+   if (status != HTTP_CODE_OK) {
+-    autoUpdateStatus = "GitHub update check failed with HTTP " + String(status) + ".";
++    autoUpdateStatus = "Firmware update service failed with HTTP " + String(status) + ".";
+     http.end();
+     return false;
+   }
+@@ -667,29 +665,24 @@
+   JsonDocument document;
+   const DeserializationError error = deserializeJson(document, payload);
+   if (error) {
+-    autoUpdateStatus = String("GitHub release JSON error: ") + error.c_str();
++    autoUpdateStatus = String("Firmware manifest JSON error: ") + error.c_str();
+     return false;
+   }
+ 
+-  const String tag = document["tag_name"] | "";
+-  version = normalizedVersion(tag);
+-  int major = 0, minor = 0, patch = 0;
+-  if (!parseVersion(version, major, minor, patch)) {
+-    autoUpdateStatus = "Latest GitHub release has an invalid firmware version tag.";
++  if (!document["ok"].as<bool>()) {
++    autoUpdateStatus = "Firmware update service returned an unsuccessful manifest.";
+     return false;
+   }
+ 
+-  JsonArray assets = document["assets"].as<JsonArray>();
+-  for (JsonObject asset : assets) {
+-    const String name = asset["name"] | "";
+-    if (name == AppConfig::kFirmwareAssetName) {
+-      downloadUrl = asset["browser_download_url"] | "";
+-      break;
+-    }
++  version = normalizedVersion(String(document["version"] | ""));
++  downloadUrl = String(document["downloadUrl"] | "");
++  int major = 0, minor = 0, patch = 0;
++  if (!parseVersion(version, major, minor, patch)) {
++    autoUpdateStatus = "Update service returned an invalid firmware version.";
++    return false;
+   }
+-
+-  if (downloadUrl.length() == 0) {
+-    autoUpdateStatus = "Latest release has no LOKWOD_Visitor_Light.bin asset.";
++  if (!downloadUrl.startsWith(workerBaseUrl + "/v1/firmware/")) {
++    autoUpdateStatus = "Update service returned an invalid firmware download URL.";
+     return false;
+   }
+   return true;
+@@ -720,6 +713,8 @@
+       secureClient, downloadUrl, AppConfig::kFirmwareVersion,
+       [](HTTPClient *request) {
+         request->setUserAgent(String("LOKWOD-Visitor-Light/") + AppConfig::kFirmwareVersion);
++        request->addHeader("Authorization", "Bearer " + deviceToken);
++        request->addHeader("X-LOKWOD-Device", "esp32-s3-visitor-light");
+         request->addHeader("Accept", "application/octet-stream");
+         request->addHeader("Cache-Control", "no-cache");
+       });
+@@ -809,7 +804,7 @@
+   page += '"';
+   page += F(R"HTML( placeholder="https://...workers.dev"><label for="device_token">New device token</label><input id="device_token" name="device_token" type="password" placeholder="Leave blank to keep the existing token"><button type="submit">Save configuration</button></form><p class="muted">Saving a new URL or token resets the event cursor so old visits do not flash unexpectedly.</p></section>
+ <section class="card"><h2>Security settings</h2><p class="muted">Passwords are stored on this ESP32 and survive power cycles and future firmware updates. Leave a field blank to keep its current password. New passwords must be 8 to 63 characters. The dashboard uses a normal sign-in page so your browser/password manager can save it.</p><form method="post" action="/api/security"><label for="dashboard_password">New dashboard password</label><input id="dashboard_password" name="dashboard_password" type="password" minlength="8" maxlength="63" autocomplete="new-password" placeholder="Leave blank to keep current"><label for="setup_password">New setup Wi-Fi AP password</label><input id="setup_password" name="setup_password" type="password" minlength="8" maxlength="63" autocomplete="new-password" placeholder="Leave blank to keep current"><label for="ota_password">New OTA password</label><input id="ota_password" name="ota_password" type="password" minlength="8" maxlength="63" autocomplete="new-password" placeholder="Leave blank to keep current"><button type="submit">Save passwords &amp; restart</button></form><p class="muted">Dashboard login user remains <strong>admin</strong>. Changing the dashboard password will make your browser ask you to sign in again after restart.</p></section>
+-<section class="card"><h2>Maintenance</h2><div class="row"><span>Firmware</span><span class="value" id="firmware">--</span></div><div class="row"><span>Latest release</span><span class="value" id="latest_firmware">--</span></div><div class="row"><span>Auto update</span><span class="value" id="update_status">--</span></div><form method="post" action="/api/check-update"><button type="submit">Check for firmware update</button></form><form method="post" action="/api/restart"><button class="secondary" type="submit">Restart ESP32</button></form><form method="get" action="/logout"><button class="secondary" type="submit">Sign out</button></form><form method="post" action="/api/reset-wifi" onsubmit="return confirm('Erase saved Wi-Fi and restart setup?')"><button class="danger" type="submit">Reset Wi-Fi</button></form><p class="muted">Automatic GitHub firmware updates check after boot and every six hours. RGB GPIO 48 &middot; secure HTTPS polling.</p></section>
++<section class="card"><h2>Maintenance</h2><div class="row"><span>Firmware</span><span class="value" id="firmware">--</span></div><div class="row"><span>Latest release</span><span class="value" id="latest_firmware">--</span></div><div class="row"><span>Auto update</span><span class="value" id="update_status">--</span></div><form method="post" action="/api/check-update"><button type="submit">Check for firmware update</button></form><form method="post" action="/api/restart"><button class="secondary" type="submit">Restart ESP32</button></form><form method="get" action="/logout"><button class="secondary" type="submit">Sign out</button></form><form method="post" action="/api/reset-wifi" onsubmit="return confirm('Erase saved Wi-Fi and restart setup?')"><button class="danger" type="submit">Reset Wi-Fi</button></form><p class="muted">Automatic firmware updates check through the connected Cloudflare Worker after boot and every six hours. RGB GPIO 48 &middot; secure HTTPS polling.</p></section>
+ <section class="card"><h2>Latest visitor</h2><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px"><button type="button" id="sound_toggle" onclick="toggleSound()">Enable cash-register sound</button><span class="muted" id="sound_state">Off &middot; appraisal sites only</span></div><div class="visitor-id" id="visitor_id">Waiting for a visitor</div><div class="visitor-location" id="visitor_location">--</div><div class="row"><span>Site</span><span class="value" id="visitor_site">--</span></div><div class="row"><span>Page</span><span class="value visitor-page" id="visitor_path">--</span></div><div class="row"><span>Title</span><span class="value visitor-page" id="visitor_title">--</span></div><div class="row"><span>When</span><span class="value" id="visitor_time">--</span></div><p class="muted" style="margin:12px 0 0">Visitor IDs are anonymous and location is approximate. Raw visitor IP addresses are not stored or shown.</p></section></div></main>
+ <script>
+ const text=(id,v)=>document.getElementById(id).textContent=v;
