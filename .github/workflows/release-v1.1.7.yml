@@ -107,3 +107,5 @@ jobs:
           else
             gh release create "$TAG" LOKWOD_Visitor_Light.bin SHA256SUMS.txt --target "$GITHUB_SHA" --title "LOKWOD Visitor Light v$VERSION" --notes "$NOTES"
           fi
+
+# CI verification marker
