@@ -40,12 +40,30 @@ jobs:
             git apply firmware/patches/v1.1.4-saveable-passwords.patch
           fi
 
-          if grep -Fq 'constexpr char kFirmwareVersion[] = "1.1.4";' firmware/src/main.cpp; then
-            echo "Applying v1.1.5 Dish Gal test-update patch."
-            git apply firmware/patches/v1.1.5-dish-gal.patch
-          fi
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('firmware/src/main.cpp')
+          source = path.read_text(encoding='utf-8')
+
+          old_version = 'constexpr char kFirmwareVersion[] = "1.1.4";'
+          new_version = 'constexpr char kFirmwareVersion[] = "1.1.5";'
+          if old_version not in source:
+              raise SystemExit('Expected v1.1.4 source after compatibility preparation.')
+          source = source.replace(old_version, new_version, 1)
+
+          old_colors = '<section class="card"><h2>Site colors</h2><div class="legend"><div><i class="dot" style="background:rgb(0,185,255)"></i>Nautical Dream</div><div><i class="dot" style="background:rgb(0,82,255)"></i>LOKWOD</div><div><i class="dot" style="background:rgb(0,235,95)"></i>Life Simulation</div><div><i class="dot" style="background:rgb(180,35,255)"></i>Beautiful Men\'s Club</div><div><i class="dot" style="background:rgb(255,96,0)"></i>Mr Adventure Dad</div><div><i class="dot" style="background:rgb(255,174,0)"></i>Syracuse Appraiser</div><div><i class="dot" style="background:rgb(235,235,235);border:1px solid #aaa"></i>Accurate Appraisals</div></div></section>'
+          new_colors = '<section class="card"><h2>Site colors</h2><div class="legend"><div><i class="dot" style="background:rgb(0,185,255)"></i>Nautical Dream</div><div><i class="dot" style="background:rgb(0,82,255)"></i>LOKWOD</div><div><i class="dot" style="background:rgb(0,235,95)"></i>Life Simulation</div><div><i class="dot" style="background:rgb(180,35,255)"></i>Beautiful Men\'s Club</div><div><i class="dot" style="background:rgb(255,96,0)"></i>Mr Adventure Dad</div><div><i class="dot" style="background:rgb(255,174,0)"></i>Syracuse Appraiser</div><div><i class="dot" style="background:rgb(235,235,235);border:1px solid #aaa"></i>Accurate Appraisals</div><div><i class="dot" style="background:transparent;border:1px dashed #9aa7b7"></i>Dish Gal</div></div></section>'
+          if old_colors not in source:
+              raise SystemExit('Could not find the Site colors block for the v1.1.5 test update.')
+          source = source.replace(old_colors, new_colors, 1)
+
+          path.write_text(source, encoding='utf-8')
+          print('Prepared Visitor Light v1.1.5 with blank Dish Gal site-color entry.')
+          PY
 
           grep -F 'constexpr char kFirmwareVersion[]' firmware/src/main.cpp
+          grep -F 'Dish Gal' firmware/src/main.cpp
 
       - name: Supply non-secret build configuration
         run: cp firmware/include/secrets.example.h firmware/include/secrets.h
@@ -103,7 +121,7 @@ jobs:
             SHA256SUMS.txt \
             --target "$GITHUB_SHA" \
             --title "LOKWOD Visitor Light v$VERSION" \
-            --notes "Stable LOKWOD Website Visitor Light firmware v$VERSION. Devices running v1.1.3 or newer check the latest stable GitHub Release automatically and install newer versions over HTTPS."; then
+            --notes "Stable LOKWOD Website Visitor Light firmware v$VERSION. Test update: adds Dish Gal as an unassigned entry in the Site Colors list. Devices running v1.1.3 or newer check the latest stable GitHub Release automatically and install newer versions over HTTPS."; then
             echo "Published release $TAG."
             exit 0
           fi
