@@ -1,0 +1,1 @@
+Second PR-only workflow trigger after adding the minimal Actions probe.
