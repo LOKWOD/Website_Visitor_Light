@@ -1,55 +1,50 @@
-# Website Visitor Light
+# LOKWOD Website Visitor Light
 
-ESP32-S3 website visitor indicator.
+ESP32-S3 website visitor indicator using the onboard WS2812 RGB LED on GPIO 48.
 
-## Wi-Fi reconnect hardening
+## Current firmware: v1.1.2
 
-The repository now includes `src/VisitorLightWiFi.h` and `src/VisitorLightWiFi.cpp` for persistent Wi-Fi recovery.
+`firmware/src/main.cpp` is the current visitor-light firmware. v1.1.2 retains the v1.1.1 dashboard, Latest Visitor display, RGB visitor notifications, Cloudflare Worker polling, local dashboard authentication, Arduino OTA, and dashboard-only appraisal cash-register sound.
 
-Behavior:
+### Wi-Fi recovery behavior
 
-- Wi-Fi SSID/password are stored in ESP32 `Preferences` namespace `wifi` using keys `ssid` and `pass`.
-- On every power-up, firmware can load those credentials and reconnect automatically.
+- WiFiManager continues to save the selected Wi-Fi network in the ESP32's persistent Wi-Fi configuration.
+- A normal power cycle reconnects to the saved network without requiring setup again.
 - ESP32 automatic reconnect is enabled.
-- While disconnected, `VisitorLightWiFi::service()` retries without blocking the normal visitor-light loop.
-- A reconnect is attempted every 5 seconds.
-- Every 30 seconds of continued failure, the helper issues a fresh `WiFi.begin()` using the saved credentials.
-- A temporary network failure never clears the saved credentials.
-- `consumeReconnected()` allows the visitor poller to run immediately after the network returns.
+- If the connection drops while running, firmware explicitly calls `WiFi.reconnect()` every 5 seconds.
+- If the unit remains offline for 90 seconds, it reboots into the saved-network recovery flow.
+- The WiFiManager setup portal now times out after 120 seconds rather than remaining stuck indefinitely when the router/mesh is also rebooting after a power outage. The ESP32 then restarts and retries the saved network.
+- Saved Wi-Fi is erased only through the existing **Reset Wi-Fi** action on the local dashboard.
 
-### Integration into the existing visitor-light firmware
+This gives the light two recovery layers: normal ESP32 reconnect while running, followed by a full saved-network retry after a prolonged outage.
 
-The working `src/main.cpp` still needs to be committed from the local PlatformIO project before this helper can be wired into it without risking changes to the existing RGB/Cloudflare visitor behavior.
+## Firmware project
 
-Add the header:
+The PlatformIO project is under `firmware/`.
 
-```cpp
-#include "VisitorLightWiFi.h"
+```text
+firmware/
+  platformio.ini
+  include/
+    secrets.example.h
+    trusted_roots.h
+  src/
+    main.cpp
 ```
 
-At boot, use the saved network before falling back to setup mode:
+Private `firmware/include/secrets.h` is intentionally excluded from Git. Copy `secrets.example.h` to `secrets.h` only when setting up a new local checkout, then insert the existing private values locally.
 
-```cpp
-const bool wifiConnected = VisitorLightWiFi::beginSaved(15000);
-if (!wifiConnected) {
-  // Start the existing setup/captive-portal behavior here.
-}
+Build with:
+
+```powershell
+cd firmware
+pio run -e esp32-s3-devkitc-1
 ```
 
-When the user submits Wi-Fi settings, save them with:
+Flash over USB with:
 
-```cpp
-VisitorLightWiFi::saveCredentials(ssid, password);
+```powershell
+pio run -e esp32-s3-devkitc-1 -t upload
 ```
 
-At the top of the normal `loop()`:
-
-```cpp
-VisitorLightWiFi::service();
-
-if (VisitorLightWiFi::consumeReconnected()) {
-  // Optional: force the visitor-event poller to run immediately.
-}
-```
-
-Do not erase credentials merely because a connection attempt times out. Only call `VisitorLightWiFi::clearCredentials()` from an explicit "Forget/Reset Wi-Fi" action.
+A GitHub Actions workflow also performs a non-secret firmware compile check on repository updates.
