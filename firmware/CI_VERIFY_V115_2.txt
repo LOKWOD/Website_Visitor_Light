@@ -1,0 +1,1 @@
+Temporary firmware-path change to verify the v1.1.5 GitHub Actions pipeline after source-layout patch repair.
