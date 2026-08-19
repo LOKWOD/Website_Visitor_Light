@@ -2,9 +2,23 @@
 
 ESP32-S3 website visitor indicator using the onboard WS2812 RGB LED on GPIO 48.
 
-## Current firmware: v1.1.3
+## Current stable firmware: v1.1.4
 
-v1.1.3 adds hands-off firmware updates while retaining the v1.1.2 Wi-Fi recovery, visitor RGB queue, Cloudflare Worker polling, Latest Visitor dashboard, local dashboard authentication, ArduinoOTA, and dashboard-only appraisal cash-register sound.
+v1.1.4 keeps the v1.1.3 hands-off GitHub firmware updater and adds saveable local passwords plus a normal rememberable dashboard login.
+
+### Saveable passwords and dashboard login
+
+- The dashboard now has a **Security settings** card.
+- Dashboard, setup-AP, and Arduino OTA passwords can be changed from the local dashboard.
+- Passwords are stored in ESP32 nonvolatile `Preferences` and survive power cycles, restarts, and future firmware updates.
+- Leave a password field blank to keep its current value.
+- Requested password changes are validated before any are written; passwords must be 8 to 63 characters.
+- Dashboard username remains `admin`.
+- The old browser Basic-Auth popup is replaced by a normal HTML login form using standard password-manager/autofill fields.
+- **Remember me on this device** creates a persistent browser session for up to 30 days.
+- The remembered server-side session token is also stored on the ESP32, so the login can survive ESP32 restarts and firmware updates.
+- Changing the dashboard password rotates the session token and invalidates previously remembered browser sessions.
+- A **Sign out** button is available under Maintenance.
 
 ### Automatic firmware updates
 
@@ -15,13 +29,13 @@ v1.1.3 adds hands-off firmware updates while retaining the v1.1.2 Wi-Fi recovery
 - Downloads use certificate-validated HTTPS and the ESP32 OTA partition.
 - A failed update leaves the currently running firmware in place and retries the release check later.
 - The dashboard shows the installed version, latest release, update status, and includes a **Check for firmware update** button.
-- The repository workflow builds `LOKWOD_Visitor_Light.bin` and automatically publishes a GitHub Release whenever `kFirmwareVersion` is bumped to a version that does not already have a release.
+- The repository workflow builds `LOKWOD_Visitor_Light.bin` and automatically publishes a GitHub Release for a new stable firmware version.
 
-**Important:** v1.1.3 must be installed once over USB (or the existing local Arduino OTA path). After that, future published versions can install themselves.
+**Important:** a device on v1.1.3 can receive v1.1.4 automatically. A device still on v1.1.2 or earlier should use the v1.1.4 USB bridge installer once; normal later releases can then install themselves.
 
 ### Persistent private device configuration
 
-Public GitHub release binaries must not contain private device credentials. v1.1.3 migrates the existing Worker URL, device token, dashboard password, OTA password, and setup password into ESP32 nonvolatile storage on the first boot. Future public release binaries preserve and reuse those stored values instead of replacing them with CI placeholder values.
+Public GitHub release binaries do not contain private device credentials. The v1.1.3+ firmware migrates/preserves the Worker URL, device token, dashboard password, OTA password, and setup password in ESP32 nonvolatile storage. Public CI-built releases reuse those stored values instead of replacing them with placeholder values.
 
 ## Wi-Fi recovery behavior
 
@@ -35,7 +49,7 @@ Public GitHub release binaries must not contain private device credentials. v1.1
 
 ## Firmware project
 
-The PlatformIO project is under `firmware/`.
+The PlatformIO project is under `firmware/`. The repository currently retains the v1.1.3 baseline source plus the compatibility patch used to build the v1.1.4 stable release.
 
 ```text
 firmware/
@@ -43,11 +57,13 @@ firmware/
   include/
     secrets.example.h
     trusted_roots.h
+  patches/
+    v1.1.4-saveable-passwords.patch
   src/
     main.cpp
 ```
 
-Private `firmware/include/secrets.h` is intentionally excluded from Git. It is used for the one-time private v1.1.3 migration build; CI builds use `secrets.example.h`, because device-specific credentials are preserved in ESP32 nonvolatile storage after migration.
+Private `firmware/include/secrets.h` is intentionally excluded from Git. CI builds use `secrets.example.h`; device-specific credentials are preserved in ESP32 nonvolatile storage.
 
 Build locally with:
 
