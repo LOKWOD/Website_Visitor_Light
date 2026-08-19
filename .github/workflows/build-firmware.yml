@@ -36,11 +36,16 @@ jobs:
         shell: bash
         run: |
           if grep -Fq 'constexpr char kFirmwareVersion[] = "1.1.3";' firmware/src/main.cpp; then
-            echo "Applying v1.1.4 saveable-password/dashboard-login patch."
+            echo "Applying v1.1.4 saveable-password/dashboard-login compatibility patch."
             git apply firmware/patches/v1.1.4-saveable-passwords.patch
-          else
-            echo "Source is newer than the v1.1.3 baseline; no compatibility patch needed."
           fi
+
+          if grep -Fq 'constexpr char kFirmwareVersion[] = "1.1.4";' firmware/src/main.cpp; then
+            echo "Applying v1.1.5 Dish Gal test-update patch."
+            git apply firmware/patches/v1.1.5-dish-gal.patch
+          fi
+
+          grep -F 'constexpr char kFirmwareVersion[]' firmware/src/main.cpp
 
       - name: Supply non-secret build configuration
         run: cp firmware/include/secrets.example.h firmware/include/secrets.h
@@ -103,8 +108,6 @@ jobs:
             exit 0
           fi
 
-          # A near-simultaneous run may have created the same release after the
-          # first existence check. Treat that as success rather than a false CI failure.
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG was created by another run."
             exit 0
