@@ -32,10 +32,9 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio
 
-      # Build the v1.1.5 test release. The generated firmware talks only to the
-      # already-connected Cloudflare Worker for update checks and downloads;
-      # GitHub is accessed server-side by the Worker, never by the ESP32.
-      - name: Prepare v1.1.5 release source
+      # Build v1.1.6 from the validated v1.1.4 compatibility baseline, while
+      # keeping all firmware update checks/downloads on the Cloudflare Worker.
+      - name: Prepare v1.1.6 release source
         shell: bash
         run: |
           if grep -Fq 'constexpr char kFirmwareVersion[] = "1.1.3";' firmware/src/main.cpp; then
@@ -51,7 +50,7 @@ jobs:
           source = path.read_text(encoding='utf-8')
 
           old_version = 'constexpr char kFirmwareVersion[] = "1.1.4";'
-          new_version = 'constexpr char kFirmwareVersion[] = "1.1.5";'
+          new_version = 'constexpr char kFirmwareVersion[] = "1.1.6";'
           if old_version not in source:
               raise SystemExit('Expected v1.1.4 source after compatibility preparation.')
           source = source.replace(old_version, new_version, 1)
@@ -59,7 +58,7 @@ jobs:
           old_colors = '<section class="card"><h2>Site colors</h2><div class="legend"><div><i class="dot" style="background:rgb(0,185,255)"></i>Nautical Dream</div><div><i class="dot" style="background:rgb(0,82,255)"></i>LOKWOD</div><div><i class="dot" style="background:rgb(0,235,95)"></i>Life Simulation</div><div><i class="dot" style="background:rgb(180,35,255)"></i>Beautiful Men\'s Club</div><div><i class="dot" style="background:rgb(255,96,0)"></i>Mr Adventure Dad</div><div><i class="dot" style="background:rgb(255,174,0)"></i>Syracuse Appraiser</div><div><i class="dot" style="background:rgb(235,235,235);border:1px solid #aaa"></i>Accurate Appraisals</div></div></section>'
           new_colors = '<section class="card"><h2>Site colors</h2><div class="legend"><div><i class="dot" style="background:rgb(0,185,255)"></i>Nautical Dream</div><div><i class="dot" style="background:rgb(0,82,255)"></i>LOKWOD</div><div><i class="dot" style="background:rgb(0,235,95)"></i>Life Simulation</div><div><i class="dot" style="background:rgb(180,35,255)"></i>Beautiful Men\'s Club</div><div><i class="dot" style="background:rgb(255,96,0)"></i>Mr Adventure Dad</div><div><i class="dot" style="background:rgb(255,174,0)"></i>Syracuse Appraiser</div><div><i class="dot" style="background:rgb(235,235,235);border:1px solid #aaa"></i>Accurate Appraisals</div><div><i class="dot" style="background:transparent;border:1px dashed #9aa7b7"></i>Dish Gal</div></div></section>'
           if old_colors not in source:
-              raise SystemExit('Could not find the Site colors block for the v1.1.5 test update.')
+              raise SystemExit('Could not find the Site colors block.')
           source = source.replace(old_colors, new_colors, 1)
 
           latest_api = 'constexpr char kLatestReleaseApi[] = "https://api.github.com/repos/LOKWOD/Website_Visitor_Light/releases/latest";\n'
@@ -139,12 +138,32 @@ jobs:
               raise SystemExit('Maintenance update description was not found.')
           source = source.replace(old_maintenance, new_maintenance, 1)
 
+          old_latest = '<section class="card"><h2>Latest visitor</h2><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px"><button type="button" id="sound_toggle" onclick="toggleSound()">Enable cash-register sound</button><span class="muted" id="sound_state">Off &middot; appraisal sites only</span></div><div class="visitor-id" id="visitor_id">Waiting for a visitor</div><div class="visitor-location" id="visitor_location">--</div><div class="row"><span>Site</span><span class="value" id="visitor_site">--</span></div><div class="row"><span>Page</span><span class="value visitor-page" id="visitor_path">--</span></div><div class="row"><span>Title</span><span class="value visitor-page" id="visitor_title">--</span></div><div class="row"><span>When</span><span class="value" id="visitor_time">--</span></div><p class="muted" style="margin:12px 0 0">Visitor IDs are anonymous and location is approximate. Raw visitor IP addresses are not stored or shown.</p></section></div></main>'
+          new_latest = '<section class="card"><h2>Latest visitor</h2><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px"><button type="button" id="sound_toggle" onclick="toggleSound()">Enable cash-register sound</button><span class="muted" id="sound_state">Off &middot; appraisal sites only</span></div><div class="visitor-id" id="visitor_id">Waiting for a visitor</div><div class="muted" style="margin-top:10px">Approximate area</div><div class="visitor-location" id="visitor_location">Waiting for location data</div><div class="row"><span>Country</span><span class="value" id="visitor_country_name">--</span></div><div class="row"><span>Site</span><span class="value" id="visitor_site">--</span></div><div class="row"><span>Page</span><span class="value visitor-page" id="visitor_path">--</span></div><div class="row"><span>Title</span><span class="value visitor-page" id="visitor_title">--</span></div><div class="row"><span>When</span><span class="value" id="visitor_time">--</span></div><p class="muted" style="margin:12px 0 0">Location is approximate and derived from network geography. Full visitor IP addresses are not displayed on the dashboard.</p></section></div></main>'
+          if old_latest not in source:
+              raise SystemExit('Latest visitor card was not found.')
+          source = source.replace(old_latest, new_latest, 1)
+
+          old_js = "const appraisalSite=(name)=>/syracuse appraiser|accurate/i.test(name||'');"
+          new_js = "const appraisalSite=(name)=>/syracuse appraiser|accurate/i.test(name||'');\\nconst countryName=(code)=>{if(!code)return'';try{return new Intl.DisplayNames([navigator.language||'en'],{type:'region'}).of(String(code).toUpperCase())||code}catch(e){return code}};\\nconst visitorArea=(s)=>{const parts=[s.visitor_city,s.visitor_region].filter(Boolean);const country=countryName(s.visitor_country);if(country)parts.push(country);return parts.join(', ')||'Location unavailable'};"
+          if old_js not in source:
+              raise SystemExit('Dashboard JavaScript marker was not found.')
+          source = source.replace(old_js, new_js, 1)
+
+          old_refresh = "text('visitor_id',s.visitor_id?('Visitor '+s.visitor_id):'Waiting for a visitor');const loc=[s.visitor_city,s.visitor_region,s.visitor_country].filter(Boolean).join(', ');text('visitor_location',loc||'Location unavailable');text('visitor_site',s.visitor_site||'--');"
+          new_refresh = "text('visitor_id',s.visitor_id?('Visitor '+s.visitor_id):'Waiting for a visitor');text('visitor_location',visitorArea(s));text('visitor_country_name',countryName(s.visitor_country)||'--');text('visitor_site',s.visitor_site||'--');"
+          if old_refresh not in source:
+              raise SystemExit('Latest visitor refresh code was not found.')
+          source = source.replace(old_refresh, new_refresh, 1)
+
           path.write_text(source, encoding='utf-8')
-          print('Prepared v1.1.5 with Cloudflare-proxied firmware updates.')
+          print('Prepared v1.1.6 with prominent approximate visitor area and Cloudflare-proxied updates.')
           PY
 
-          grep -F 'constexpr char kFirmwareVersion[] = "1.1.5";' firmware/src/main.cpp
+          grep -F 'constexpr char kFirmwareVersion[] = "1.1.6";' firmware/src/main.cpp
           grep -F 'Dish Gal' firmware/src/main.cpp
+          grep -F 'Approximate area' firmware/src/main.cpp
+          grep -F 'visitor_country_name' firmware/src/main.cpp
           grep -F '/v1/firmware/latest' firmware/src/main.cpp
           grep -F 'Authorization", "Bearer " + deviceToken' firmware/src/main.cpp
           if grep -Fq 'api.github.com/repos/LOKWOD/Website_Visitor_Light/releases/latest' firmware/src/main.cpp; then
@@ -198,10 +217,10 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         shell: bash
         run: |
-          NOTES="Stable LOKWOD Website Visitor Light firmware v$VERSION. Test update: adds Dish Gal as an unassigned Site Colors entry. Firmware update checks/downloads are routed through the authenticated Cloudflare Worker so the ESP32 no longer connects directly to GitHub HTTPS."
+          NOTES="LOKWOD Website Visitor Light v$VERSION. Latest Visitor now shows the visitor's approximate network area prominently and expands country codes to readable country names. Full visitor IP addresses are not displayed. Firmware update checks/downloads stay routed through the authenticated Cloudflare Worker."
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG already exists; replacing its firmware assets with the repaired Cloudflare-updater build."
+            echo "Release $TAG already exists; replacing firmware assets."
             gh release upload "$TAG" LOKWOD_Visitor_Light.bin SHA256SUMS.txt --clobber
             gh release edit "$TAG" --notes "$NOTES"
             exit 0
