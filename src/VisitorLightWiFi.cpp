@@ -8,6 +8,7 @@ namespace {
 Preferences g_wifiPrefs;
 String g_savedSsid;
 String g_savedPassword;
+bool g_credentialsLoaded = false;
 bool g_haveCredentials = false;
 bool g_wasConnected = false;
 bool g_reconnectedEvent = false;
@@ -25,8 +26,8 @@ void startStationWithSavedCredentials() {
     return;
   }
 
-  // WiFi.begin() will enable the station interface. If a setup AP is already
-  // active, the Arduino ESP32 core keeps the AP while enabling STA (AP+STA).
+  // WiFi.begin() enables the station interface. If a setup AP is already
+  // active, enabling STA results in AP+STA rather than discarding the AP.
   WiFi.setAutoReconnect(true);
   WiFi.begin(g_savedSsid.c_str(), g_savedPassword.c_str());
 }
@@ -41,12 +42,13 @@ bool loadCredentials() {
   g_savedPassword = g_wifiPrefs.getString(kPasswordKey, "");
   g_wifiPrefs.end();
 
-  g_haveCredentials = !g_savedSsid.isEmpty();
+  g_credentialsLoaded = true;
+  g_haveCredentials = (g_savedSsid.length() > 0);
   return g_haveCredentials;
 }
 
 bool saveCredentials(const String &ssid, const String &password) {
-  if (ssid.isEmpty()) {
+  if (ssid.length() == 0) {
     return false;
   }
 
@@ -70,6 +72,7 @@ void clearCredentials() {
 
   g_savedSsid = "";
   g_savedPassword = "";
+  g_credentialsLoaded = true;
   g_haveCredentials = false;
   g_reconnectAttempts = 0;
   g_lastReconnectAttemptMs = 0;
@@ -112,7 +115,10 @@ void service() {
 
   g_wasConnected = false;
 
-  if (!g_haveCredentials && !loadCredentials()) {
+  if (!g_credentialsLoaded) {
+    loadCredentials();
+  }
+  if (!g_haveCredentials) {
     return;
   }
 
@@ -144,14 +150,14 @@ bool isConnected() {
 }
 
 bool hasCredentials() {
-  if (!g_haveCredentials) {
+  if (!g_credentialsLoaded) {
     loadCredentials();
   }
   return g_haveCredentials;
 }
 
 String savedSSID() {
-  if (!g_haveCredentials) {
+  if (!g_credentialsLoaded) {
     loadCredentials();
   }
   return g_savedSsid;
