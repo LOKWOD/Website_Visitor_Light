@@ -47,6 +47,7 @@ jobs:
           path = Path('firmware/src/main.cpp')
           source = path.read_text(encoding='utf-8')
 
+          # v1.1.5 test release: version bump plus one intentionally blank Dish Gal entry.
           old_version = 'constexpr char kFirmwareVersion[] = "1.1.4";'
           new_version = 'constexpr char kFirmwareVersion[] = "1.1.5";'
           if old_version not in source:
@@ -59,17 +60,93 @@ jobs:
               raise SystemExit('Could not find the Site colors block for the v1.1.5 test update.')
           source = source.replace(old_colors, new_colors, 1)
 
+          # The ESP32 must not connect directly to GitHub for updates. Its existing
+          # Cloudflare Worker HTTPS path is already proven by normal visitor polling.
+          latest_api = 'constexpr char kLatestReleaseApi[] = "https://api.github.com/repos/LOKWOD/Website_Visitor_Light/releases/latest";\n'
+          if latest_api not in source:
+              raise SystemExit('Direct GitHub release API constant was not found.')
+          source = source.replace(latest_api, '', 1)
+
+          function_start = source.index('bool fetchLatestFirmwareRelease(String &version, String &downloadUrl) {')
+          function_end = source.index('\nbool installFirmwareUpdate(', function_start)
+          worker_manifest_function = r'''bool fetchLatestFirmwareRelease(String &version, String &downloadUrl) {
+            autoUpdateStatus = "Checking Cloudflare for firmware updates...";
+
+            if (workerBaseUrl.length() == 0 || deviceToken.length() < 32) {
+              autoUpdateStatus = "Update service unavailable until Worker configuration is ready.";
+              return false;
+            }
+
+            LokwodSecureClient secureClient;
+            HTTPClient http;
+            if (!beginSecureRequest(secureClient, http, workerBaseUrl + "/v1/firmware/latest")) {
+              autoUpdateStatus = "Update check could not initialize Worker HTTPS.";
+              return false;
+            }
+            http.addHeader("Cache-Control", "no-cache");
+
+            const int status = http.GET();
+            if (status == HTTP_CODE_NOT_FOUND) {
+              http.end();
+              autoUpdateStatus = "No published firmware release yet.";
+              return true;
+            }
+            if (status != HTTP_CODE_OK) {
+              autoUpdateStatus = "Firmware update service failed with HTTP " + String(status) + ".";
+              http.end();
+              return false;
+            }
+
+            const String payload = http.getString();
+            http.end();
+
+            JsonDocument document;
+            const DeserializationError error = deserializeJson(document, payload);
+            if (error) {
+              autoUpdateStatus = String("Firmware manifest JSON error: ") + error.c_str();
+              return false;
+            }
+            if (!document["ok"].as<bool>()) {
+              autoUpdateStatus = "Firmware update service returned an unsuccessful manifest.";
+              return false;
+            }
+
+            version = normalizedVersion(String(document["version"] | ""));
+            downloadUrl = String(document["downloadUrl"] | "");
+            int major = 0, minor = 0, patch = 0;
+            if (!parseVersion(version, major, minor, patch)) {
+              autoUpdateStatus = "Update service returned an invalid firmware version.";
+              return false;
+            }
+            if (!downloadUrl.startsWith(workerBaseUrl + "/v1/firmware/")) {
+              autoUpdateStatus = "Update service returned an invalid firmware download URL.";
+              return false;
+            }
+            return true;
+          }
+          '''
+          source = source[:function_start] + worker_manifest_function + source[function_end:]
+
+          old_callback = '''        request->setUserAgent(String("LOKWOD-Visitor-Light/") + AppConfig::kFirmwareVersion);\n        request->addHeader("Accept", "application/octet-stream");'''
+          new_callback = '''        request->setUserAgent(String("LOKWOD-Visitor-Light/") + AppConfig::kFirmwareVersion);\n        request->addHeader("Authorization", "Bearer " + deviceToken);\n        request->addHeader("X-LOKWOD-Device", "esp32-s3-visitor-light");\n        request->addHeader("Accept", "application/octet-stream");'''
+          if old_callback not in source:
+              raise SystemExit('Firmware download request callback was not found.')
+          source = source.replace(old_callback, new_callback, 1)
+
+          old_maintenance = 'Automatic GitHub firmware updates check after boot and every six hours.'
+          new_maintenance = 'Automatic firmware updates check through the connected Cloudflare Worker after boot and every six hours.'
+          if old_maintenance not in source:
+              raise SystemExit('Maintenance update description was not found.')
+          source = source.replace(old_maintenance, new_maintenance, 1)
+
           path.write_text(source, encoding='utf-8')
-          print('Prepared v1.1.5 with blank Dish Gal site-color entry.')
+          print('Prepared v1.1.5 with Cloudflare-proxied firmware updates.')
           PY
 
-          echo "Routing firmware update traffic through the existing Cloudflare Worker."
-          git apply --check --recount firmware/patches/v1.1.5-worker-ota.patch
-          git apply --recount firmware/patches/v1.1.5-worker-ota.patch
-
-          grep -F 'constexpr char kFirmwareVersion[]' firmware/src/main.cpp
+          grep -F 'constexpr char kFirmwareVersion[] = "1.1.5";' firmware/src/main.cpp
           grep -F 'Dish Gal' firmware/src/main.cpp
           grep -F '/v1/firmware/latest' firmware/src/main.cpp
+          grep -F 'Authorization", "Bearer " + deviceToken' firmware/src/main.cpp
           if grep -Fq 'api.github.com/repos/LOKWOD/Website_Visitor_Light/releases/latest' firmware/src/main.cpp; then
             echo "Direct GitHub updater unexpectedly remains in firmware source."
             exit 1
