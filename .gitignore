@@ -1,0 +1,22 @@
+# Local/private configuration
+private-config.json
+DEVICE_SETUP.txt
+firmware/include/secrets.h
+cloudflare-worker/.secrets.env
+cloudflare-worker/.dev.vars
+
+# PlatformIO
+firmware/.pio/
+firmware/.vscode/
+.pio/
+.vscode/
+
+# Node
+cloudflare-worker/node_modules/
+node_modules/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+*.bak
+*.tmp
