@@ -47,7 +47,6 @@ jobs:
           path = Path('firmware/src/main.cpp')
           source = path.read_text(encoding='utf-8')
 
-          # v1.1.5 test release: version bump plus one intentionally blank Dish Gal entry.
           old_version = 'constexpr char kFirmwareVersion[] = "1.1.4";'
           new_version = 'constexpr char kFirmwareVersion[] = "1.1.5";'
           if old_version not in source:
@@ -60,8 +59,6 @@ jobs:
               raise SystemExit('Could not find the Site colors block for the v1.1.5 test update.')
           source = source.replace(old_colors, new_colors, 1)
 
-          # The ESP32 must not connect directly to GitHub for updates. Its existing
-          # Cloudflare Worker HTTPS path is already proven by normal visitor polling.
           latest_api = 'constexpr char kLatestReleaseApi[] = "https://api.github.com/repos/LOKWOD/Website_Visitor_Light/releases/latest";\n'
           if latest_api not in source:
               raise SystemExit('Direct GitHub release API constant was not found.')
