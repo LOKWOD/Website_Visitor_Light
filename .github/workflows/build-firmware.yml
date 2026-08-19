@@ -32,6 +32,9 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio
 
+      # Build the v1.1.5 test release. The generated firmware talks only to the
+      # already-connected Cloudflare Worker for update checks and downloads;
+      # GitHub is accessed server-side by the Worker, never by the ESP32.
       - name: Prepare v1.1.5 release source
         shell: bash
         run: |
