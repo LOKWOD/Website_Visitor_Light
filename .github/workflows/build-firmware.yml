@@ -37,7 +37,8 @@ jobs:
         run: |
           if grep -Fq 'constexpr char kFirmwareVersion[] = "1.1.3";' firmware/src/main.cpp; then
             echo "Applying v1.1.4 saveable-password/dashboard-login compatibility patch."
-            git apply firmware/patches/v1.1.4-saveable-passwords.patch
+            git apply --check --recount firmware/patches/v1.1.4-saveable-passwords.patch
+            git apply --recount firmware/patches/v1.1.4-saveable-passwords.patch
           fi
 
           python - <<'PY'
