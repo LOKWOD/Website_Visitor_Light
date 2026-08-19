@@ -4,6 +4,7 @@
 #include <ArduinoOTA.h>
 #include <ESPmDNS.h>
 #include <HTTPClient.h>
+#include <HTTPUpdate.h>
 #if __has_include(<NetworkClientSecure.h>)
 #include <NetworkClientSecure.h>
 using LokwodSecureClient = NetworkClientSecure;
@@ -16,12 +17,13 @@ using LokwodSecureClient = WiFiClientSecure;
 #include <WiFi.h>
 #include <WiFiManager.h>
 #include <time.h>
+#include <esp_system.h>
 
 #include "secrets.h"
 #include "trusted_roots.h"
 
 namespace AppConfig {
-constexpr char kFirmwareVersion[] = "1.1.2";
+constexpr char kFirmwareVersion[] = "1.1.3";
 constexpr char kHostname[] = "lokwod-visitor-light";
 constexpr char kSetupAccessPoint[] = "LOKWOD-Visitor-Light";
 constexpr uint8_t kRgbPin = 48;
@@ -34,6 +36,12 @@ constexpr uint32_t kConfigPortalTimeoutSeconds = 120;
 constexpr uint8_t kConnectRetries = 3;
 constexpr uint32_t kNtpRetryMs = 15000;
 constexpr uint32_t kHttpTimeoutMs = 8000;
+constexpr char kLatestReleaseApi[] = "https://api.github.com/repos/LOKWOD/Website_Visitor_Light/releases/latest";
+constexpr char kFirmwareAssetName[] = "LOKWOD_Visitor_Light.bin";
+constexpr uint32_t kAutoUpdateFirstCheckMs = 45000;
+constexpr uint32_t kAutoUpdateIntervalMs = 6UL * 60UL * 60UL * 1000UL;
+constexpr uint32_t kAutoUpdateRetryMs = 15UL * 60UL * 1000UL;
+constexpr uint32_t kFirmwareDownloadTimeoutMs = 30000;
 constexpr size_t kFlashQueueCapacity = 16;
 constexpr uint16_t kFlashOnMs = 210;
 constexpr uint16_t kFlashOffMs = 130;
@@ -54,6 +62,9 @@ WebServer webServer(80);
 
 String workerBaseUrl;
 String deviceToken;
+String dashboardPassword;
+String setupApPassword;
+String otaPassword;
 uint64_t eventCursor = 0;
 bool cursorInitialized = false;
 
@@ -87,6 +98,11 @@ String lastEventCountry = "";
 uint64_t lastEventTimestamp = 0;
 bool workerEverConnected = false;
 bool otaInProgress = false;
+uint32_t nextAutoUpdateCheckMs = 0;
+uint32_t lastAutoUpdateCheckMs = 0;
+bool autoUpdateCheckRequested = false;
+String latestFirmwareVersion;
+String autoUpdateStatus = "Waiting for first automatic update check.";
 
 bool timeReached(uint32_t deadline) {
   return static_cast<int32_t>(millis() - deadline) >= 0;
@@ -143,10 +159,75 @@ void beginTimeSynchronization() {
   configTime(0, 0, "time.cloudflare.com", "pool.ntp.org", "time.google.com");
 }
 
+String generateLocalSecret(const char *prefix) {
+  char buffer[48];
+  const uint32_t randomA = esp_random();
+  const uint32_t randomB = esp_random();
+  snprintf(buffer, sizeof(buffer), "%s-%08lX%08lX", prefix,
+           static_cast<unsigned long>(randomA), static_cast<unsigned long>(randomB));
+  return String(buffer);
+}
+
+bool buildSecretIsUsable(const String &value, const char *placeholder) {
+  if (value.length() < 8) return false;
+  if (placeholder != nullptr && value == placeholder) return false;
+  if (value.startsWith("replace-") || value.startsWith("choose-") ||
+      value.startsWith("use-the-same-")) return false;
+  return true;
+}
+
+String loadOrMigrateLocalSecret(const char *key, const char *buildValue,
+                                const char *placeholder, const char *generatedPrefix) {
+  String saved = preferences.getString(key, "");
+  if (saved.length() >= 8) return saved;
+
+  const String compiled = buildValue == nullptr ? String() : String(buildValue);
+  if (buildSecretIsUsable(compiled, placeholder)) {
+    preferences.putString(key, compiled);
+    Serial.printf("Migrated %s into persistent device storage.\n", key);
+    return compiled;
+  }
+
+  const String generated = generateLocalSecret(generatedPrefix);
+  preferences.putString(key, generated);
+  Serial.printf("Generated persistent %s: %s\n", key, generated.c_str());
+  return generated;
+}
+
 void loadConfiguration() {
   preferences.begin("visitor-light", false);
-  workerBaseUrl = normalizeWorkerUrl(preferences.getString("worker", LOKWOD_DEFAULT_WORKER_URL));
-  deviceToken = preferences.getString("token", LOKWOD_DEVICE_TOKEN);
+
+  const String savedWorker = preferences.getString("worker", "");
+  if (savedWorker.length() > 0) {
+    workerBaseUrl = normalizeWorkerUrl(savedWorker);
+  } else {
+    workerBaseUrl = normalizeWorkerUrl(LOKWOD_DEFAULT_WORKER_URL);
+    if (workerBaseUrl.length() > 0 && workerBaseUrl.indexOf("your-worker") < 0) {
+      preferences.putString("worker", workerBaseUrl);
+    }
+  }
+
+  deviceToken = preferences.getString("token", "");
+  if (deviceToken.length() < 32) {
+    const String compiledToken = LOKWOD_DEVICE_TOKEN;
+    if (buildSecretIsUsable(compiledToken, "use-the-same-random-token-as-the-worker")) {
+      deviceToken = compiledToken;
+      preferences.putString("token", deviceToken);
+      Serial.println(F("Migrated Worker device token into persistent device storage."));
+    } else {
+      deviceToken = "";
+    }
+  }
+
+  dashboardPassword = loadOrMigrateLocalSecret(
+      "dash-pass", LOKWOD_DASHBOARD_PASSWORD,
+      "replace-with-local-dashboard-password", "VL-DASH");
+  setupApPassword = loadOrMigrateLocalSecret(
+      "setup-pass", LOKWOD_SETUP_AP_PASSWORD, nullptr, "VL-SETUP");
+  otaPassword = loadOrMigrateLocalSecret(
+      "ota-pass", LOKWOD_OTA_PASSWORD,
+      "choose-a-long-local-ota-password", "VL-OTA");
+
   eventCursor = preferences.getULong64("cursor", 0);
   cursorInitialized = preferences.getBool("cursor-ok", false);
 }
@@ -260,7 +341,7 @@ void connectToWiFi() {
   manager.addParameter(&workerParameter);
 
   setLed(0, 0, 45);
-  const bool connected = manager.autoConnect(AppConfig::kSetupAccessPoint, LOKWOD_SETUP_AP_PASSWORD);
+  const bool connected = manager.autoConnect(AppConfig::kSetupAccessPoint, setupApPassword.c_str());
   if (!connected) {
     Serial.println(F("Wi-Fi configuration failed; restarting."));
     setLed(60, 0, 0);
@@ -281,7 +362,7 @@ void connectToWiFi() {
 
 void configureArduinoOta() {
   ArduinoOTA.setHostname(AppConfig::kHostname);
-  ArduinoOTA.setPassword(LOKWOD_OTA_PASSWORD);
+  ArduinoOTA.setPassword(otaPassword.c_str());
   ArduinoOTA.onStart([]() {
     otaInProgress = true;
     setLed(55, 35, 0);
@@ -355,7 +436,6 @@ void processWorkerPayload(const String &payload) {
     const String city = event["city"] | "";
     const String region = event["region"] | "";
     const String country = event["country"] | "";
-
     enqueueColor(red, green, blue, 3, label, path);
     lastEventLabel = label;
     lastEventPath = path;
@@ -434,9 +514,198 @@ bool triggerCloudTest(const String &siteId) {
   return true;
 }
 
+String normalizedVersion(String value) {
+  value.trim();
+  if (value.startsWith("v") || value.startsWith("V")) value.remove(0, 1);
+  int suffix = value.indexOf('-');
+  if (suffix < 0) suffix = value.indexOf('+');
+  if (suffix >= 0) value.remove(suffix);
+  return value;
+}
+
+bool parseVersion(const String &input, int &major, int &minor, int &patch) {
+  const String value = normalizedVersion(input);
+  const int firstDot = value.indexOf('.');
+  const int secondDot = firstDot >= 0 ? value.indexOf('.', firstDot + 1) : -1;
+  if (firstDot <= 0 || secondDot <= firstDot + 1 || secondDot >= static_cast<int>(value.length()) - 1) return false;
+  if (value.indexOf('.', secondDot + 1) >= 0) return false;
+
+  const String parts[3] = {
+      value.substring(0, firstDot),
+      value.substring(firstDot + 1, secondDot),
+      value.substring(secondDot + 1)};
+  for (const String &part : parts) {
+    if (part.length() == 0) return false;
+    for (size_t index = 0; index < part.length(); ++index) {
+      if (!isDigit(part[index])) return false;
+    }
+  }
+
+  major = parts[0].toInt();
+  minor = parts[1].toInt();
+  patch = parts[2].toInt();
+  return true;
+}
+
+int compareVersions(const String &left, const String &right) {
+  int leftMajor = 0, leftMinor = 0, leftPatch = 0;
+  int rightMajor = 0, rightMinor = 0, rightPatch = 0;
+  if (!parseVersion(left, leftMajor, leftMinor, leftPatch) ||
+      !parseVersion(right, rightMajor, rightMinor, rightPatch)) return 0;
+  if (leftMajor != rightMajor) return leftMajor > rightMajor ? 1 : -1;
+  if (leftMinor != rightMinor) return leftMinor > rightMinor ? 1 : -1;
+  if (leftPatch != rightPatch) return leftPatch > rightPatch ? 1 : -1;
+  return 0;
+}
+
+bool fetchLatestFirmwareRelease(String &version, String &downloadUrl) {
+  autoUpdateStatus = "Checking GitHub for firmware updates...";
+
+  LokwodSecureClient secureClient;
+  secureClient.setCACert(LOKWOD_TRUSTED_ROOTS);
+  secureClient.setHandshakeTimeout(12);
+
+  HTTPClient http;
+  http.setTimeout(AppConfig::kHttpTimeoutMs);
+  http.setUserAgent(String("LOKWOD-Visitor-Light/") + AppConfig::kFirmwareVersion);
+  if (!http.begin(secureClient, AppConfig::kLatestReleaseApi)) {
+    autoUpdateStatus = "Update check could not initialize HTTPS.";
+    return false;
+  }
+  http.addHeader("Accept", "application/vnd.github+json");
+  http.addHeader("Cache-Control", "no-cache");
+
+  const int status = http.GET();
+  if (status == HTTP_CODE_NOT_FOUND) {
+    http.end();
+    autoUpdateStatus = "No published firmware release yet.";
+    return true;
+  }
+  if (status != HTTP_CODE_OK) {
+    autoUpdateStatus = "GitHub update check failed with HTTP " + String(status) + ".";
+    http.end();
+    return false;
+  }
+
+  const String payload = http.getString();
+  http.end();
+
+  JsonDocument document;
+  const DeserializationError error = deserializeJson(document, payload);
+  if (error) {
+    autoUpdateStatus = String("GitHub release JSON error: ") + error.c_str();
+    return false;
+  }
+
+  const String tag = document["tag_name"] | "";
+  version = normalizedVersion(tag);
+  int major = 0, minor = 0, patch = 0;
+  if (!parseVersion(version, major, minor, patch)) {
+    autoUpdateStatus = "Latest GitHub release has an invalid firmware version tag.";
+    return false;
+  }
+
+  JsonArray assets = document["assets"].as<JsonArray>();
+  for (JsonObject asset : assets) {
+    const String name = asset["name"] | "";
+    if (name == AppConfig::kFirmwareAssetName) {
+      downloadUrl = asset["browser_download_url"] | "";
+      break;
+    }
+  }
+
+  if (downloadUrl.length() == 0) {
+    autoUpdateStatus = "Latest release has no LOKWOD_Visitor_Light.bin asset.";
+    return false;
+  }
+  return true;
+}
+
+bool installFirmwareUpdate(const String &version, const String &downloadUrl) {
+  otaInProgress = true;
+  autoUpdateStatus = "Downloading and installing v" + version + "...";
+  Serial.printf("Automatic firmware update: v%s -> v%s\n",
+                AppConfig::kFirmwareVersion, version.c_str());
+  setLed(55, 35, 0);
+
+  LokwodSecureClient secureClient;
+  secureClient.setCACert(LOKWOD_TRUSTED_ROOTS);
+  secureClient.setHandshakeTimeout(15);
+
+  HTTPUpdate updater(AppConfig::kFirmwareDownloadTimeoutMs);
+  updater.rebootOnUpdate(false);
+  updater.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+  updater.onProgress([](int progress, int total) {
+    const uint8_t level = total <= 0
+                              ? 25
+                              : static_cast<uint8_t>(15 + (progress * 55LL / total));
+    setLed(level, level / 2, 0);
+  });
+
+  const t_httpUpdate_return result = updater.update(
+      secureClient, downloadUrl, AppConfig::kFirmwareVersion,
+      [](HTTPClient *request) {
+        request->setUserAgent(String("LOKWOD-Visitor-Light/") + AppConfig::kFirmwareVersion);
+        request->addHeader("Accept", "application/octet-stream");
+        request->addHeader("Cache-Control", "no-cache");
+      });
+
+  if (result == HTTP_UPDATE_OK) {
+    autoUpdateStatus = "Installed v" + version + "; rebooting.";
+    Serial.println(autoUpdateStatus);
+    setLed(0, 70, 5);
+    delay(700);
+    ESP.restart();
+    return true;
+  }
+
+  otaInProgress = false;
+  if (result == HTTP_UPDATE_NO_UPDATES) {
+    autoUpdateStatus = "Firmware server reported no update.";
+  } else {
+    autoUpdateStatus = "Firmware install failed: " + updater.getLastErrorString();
+  }
+  Serial.println(autoUpdateStatus);
+  setLed(70, 0, 0);
+  delay(500);
+  turnLedOff();
+  return false;
+}
+
+void serviceAutomaticUpdate() {
+  if (otaInProgress || WiFi.status() != WL_CONNECTED || !systemTimeIsValid()) return;
+  if (flashActive || flashQueueCount > 0) return;
+
+  const bool scheduled = timeReached(nextAutoUpdateCheckMs);
+  if (!autoUpdateCheckRequested && !scheduled) return;
+
+  autoUpdateCheckRequested = false;
+  lastAutoUpdateCheckMs = millis();
+  nextAutoUpdateCheckMs = millis() + AppConfig::kAutoUpdateIntervalMs;
+
+  String version;
+  String downloadUrl;
+  if (!fetchLatestFirmwareRelease(version, downloadUrl)) {
+    nextAutoUpdateCheckMs = millis() + AppConfig::kAutoUpdateRetryMs;
+    return;
+  }
+
+  if (version.length() == 0) return;
+  latestFirmwareVersion = version;
+
+  const int comparison = compareVersions(version, AppConfig::kFirmwareVersion);
+  if (comparison <= 0) {
+    autoUpdateStatus = "Up to date on v" + String(AppConfig::kFirmwareVersion) + ".";
+    return;
+  }
+
+  autoUpdateStatus = "New firmware v" + version + " found.";
+  installFirmwareUpdate(version, downloadUrl);
+}
+
 String dashboardPage() {
   String page;
-  page.reserve(13000);
+  page.reserve(15000);
   page += F(R"HTML(<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LOKWOD Visitor Light</title>
@@ -465,9 +734,7 @@ label{font-size:13px;font-weight:700;color:#455268}.legend{display:grid;grid-tem
   page += htmlEscape(workerBaseUrl);
   page += '"';
   page += F(R"HTML( placeholder="https://...workers.dev"><label for="device_token">New device token</label><input id="device_token" name="device_token" type="password" placeholder="Leave blank to keep the existing token"><button type="submit">Save configuration</button></form><p class="muted">Saving a new URL or token resets the event cursor so old visits do not flash unexpectedly.</p></section>
-<section class="card"><h2>Maintenance</h2><form method="post" action="/api/restart"><button class="secondary" type="submit">Restart ESP32</button></form><form method="post" action="/api/reset-wifi" onsubmit="return confirm('Erase saved Wi-Fi and restart setup?')"><button class="danger" type="submit">Reset Wi-Fi</button></form><p class="muted">Firmware )HTML");
-  page += AppConfig::kFirmwareVersion;
-  page += F(R"HTML( &middot; RGB GPIO 48 &middot; secure HTTPS polling</p></section>
+<section class="card"><h2>Maintenance</h2><div class="row"><span>Firmware</span><span class="value" id="firmware">--</span></div><div class="row"><span>Latest release</span><span class="value" id="latest_firmware">--</span></div><div class="row"><span>Auto update</span><span class="value" id="update_status">--</span></div><form method="post" action="/api/check-update"><button type="submit">Check for firmware update</button></form><form method="post" action="/api/restart"><button class="secondary" type="submit">Restart ESP32</button></form><form method="post" action="/api/reset-wifi" onsubmit="return confirm('Erase saved Wi-Fi and restart setup?')"><button class="danger" type="submit">Reset Wi-Fi</button></form><p class="muted">Automatic GitHub firmware updates check after boot and every six hours. RGB GPIO 48 &middot; secure HTTPS polling.</p></section>
 <section class="card"><h2>Latest visitor</h2><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px"><button type="button" id="sound_toggle" onclick="toggleSound()">Enable cash-register sound</button><span class="muted" id="sound_state">Off &middot; appraisal sites only</span></div><div class="visitor-id" id="visitor_id">Waiting for a visitor</div><div class="visitor-location" id="visitor_location">--</div><div class="row"><span>Site</span><span class="value" id="visitor_site">--</span></div><div class="row"><span>Page</span><span class="value visitor-page" id="visitor_path">--</span></div><div class="row"><span>Title</span><span class="value visitor-page" id="visitor_title">--</span></div><div class="row"><span>When</span><span class="value" id="visitor_time">--</span></div><p class="muted" style="margin:12px 0 0">Visitor IDs are anonymous and location is approximate. Raw visitor IP addresses are not stored or shown.</p></section></div></main>
 <script>
 const text=(id,v)=>document.getElementById(id).textContent=v;
@@ -488,14 +755,14 @@ function toggleSound(){
   soundEnabled=!soundEnabled;localStorage.setItem('lokwodAppraisalSound',soundEnabled?'1':'0');updateSoundUi();
   if(soundEnabled)cashRegister();
 }
-async function refresh(){try{const r=await fetch('/api/status',{cache:'no-store'});const s=await r.json();text('visits',s.today_visits);text('wifi',s.wifi_connected?s.ip+' ('+s.rssi+' dBm)':'Disconnected');text('worker',s.worker_connected?'Connected':'Not connected');text('last',s.last_event||'None yet');text('queue',s.queue_depth);text('uptime',s.uptime);text('visitor_id',s.visitor_id?('Visitor '+s.visitor_id):'Waiting for a visitor');const loc=[s.visitor_city,s.visitor_region,s.visitor_country].filter(Boolean).join(', ');text('visitor_location',loc||'Location unavailable');text('visitor_site',s.visitor_site||'--');text('visitor_path',s.visitor_path||'--');text('visitor_title',s.visitor_title||'--');text('visitor_time',s.last_event_timestamp?new Date(Number(s.last_event_timestamp)).toLocaleString():'--');const ts=String(s.last_event_timestamp||'');if(statusInitialized&&ts&&ts!==lastSeenEventTs&&appraisalSite(s.visitor_site))cashRegister();lastSeenEventTs=ts;statusInitialized=true;const e=document.getElementById('error');e.textContent=s.error||'Everything is operating normally.';e.className='notice '+(s.error?'bad':'ok')}catch(e){text('error','Dashboard status request failed.')}}
+async function refresh(){try{const r=await fetch('/api/status',{cache:'no-store'});const s=await r.json();text('visits',s.today_visits);text('wifi',s.wifi_connected?s.ip+' ('+s.rssi+' dBm)':'Disconnected');text('worker',s.worker_connected?'Connected':'Not connected');text('last',s.last_event||'None yet');text('queue',s.queue_depth);text('uptime',s.uptime);text('firmware','v'+s.firmware);text('latest_firmware',s.latest_firmware?('v'+s.latest_firmware):'--');text('update_status',s.auto_update_status||'--');text('visitor_id',s.visitor_id?('Visitor '+s.visitor_id):'Waiting for a visitor');const loc=[s.visitor_city,s.visitor_region,s.visitor_country].filter(Boolean).join(', ');text('visitor_location',loc||'Location unavailable');text('visitor_site',s.visitor_site||'--');text('visitor_path',s.visitor_path||'--');text('visitor_title',s.visitor_title||'--');text('visitor_time',s.last_event_timestamp?new Date(Number(s.last_event_timestamp)).toLocaleString():'--');const ts=String(s.last_event_timestamp||'');if(statusInitialized&&ts&&ts!==lastSeenEventTs&&appraisalSite(s.visitor_site))cashRegister();lastSeenEventTs=ts;statusInitialized=true;const e=document.getElementById('error');e.textContent=s.error||'Everything is operating normally.';e.className='notice '+(s.error?'bad':'ok')}catch(e){text('error','Dashboard status request failed.')}}
 updateSoundUi();refresh();setInterval(refresh,2000);
 </script></body></html>)HTML");
   return page;
 }
 
 bool requireDashboardAuthorization() {
-  if (webServer.authenticate("admin", LOKWOD_DASHBOARD_PASSWORD)) return true;
+  if (webServer.authenticate("admin", dashboardPassword.c_str())) return true;
   webServer.requestAuthentication();
   return false;
 }
@@ -509,6 +776,9 @@ void handleStatusApi() {
   if (!requireDashboardAuthorization()) return;
   JsonDocument document;
   document["firmware"] = AppConfig::kFirmwareVersion;
+  document["latest_firmware"] = latestFirmwareVersion;
+  document["auto_update_status"] = autoUpdateStatus;
+  document["last_update_check_age_ms"] = lastAutoUpdateCheckMs == 0 ? 0 : millis() - lastAutoUpdateCheckMs;
   document["wifi_connected"] = WiFi.status() == WL_CONNECTED;
   document["ip"] = WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : "";
   document["rssi"] = WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0;
@@ -563,6 +833,12 @@ void configureWebServer() {
     const String newToken = webServer.hasArg("device_token") ? webServer.arg("device_token") : "";
     saveCloudConfiguration(newWorker, newToken);
     redirectHome();
+  });
+  webServer.on("/api/check-update", HTTP_POST, []() {
+    if (!requireDashboardAuthorization()) return;
+    autoUpdateCheckRequested = true;
+    webServer.sendHeader("Location", "/", true);
+    webServer.send(303, "text/plain", "Firmware update check scheduled.");
   });
   webServer.on("/api/restart", HTTP_POST, []() {
     if (!requireDashboardAuthorization()) return;
@@ -644,6 +920,7 @@ void setup() {
   Serial.printf("Worker configured: %s\n", workerBaseUrl.length() > 0 ? "yes" : "no");
   turnLedOff();
   lastPollAttemptMs = millis() - AppConfig::kPollIntervalMs;
+  nextAutoUpdateCheckMs = millis() + AppConfig::kAutoUpdateFirstCheckMs;
 }
 
 void loop() {
@@ -652,7 +929,9 @@ void loop() {
   serviceFlashQueue();
   serviceConnectivity();
   serviceTime();
-  if (WiFi.status() == WL_CONNECTED && millis() - lastPollAttemptMs >= AppConfig::kPollIntervalMs) {
+  serviceAutomaticUpdate();
+  if (!otaInProgress && WiFi.status() == WL_CONNECTED &&
+      millis() - lastPollAttemptMs >= AppConfig::kPollIntervalMs) {
     pollWorker();
   }
   delay(2);
