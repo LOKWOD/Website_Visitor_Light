@@ -2,21 +2,36 @@
 
 ESP32-S3 website visitor indicator using the onboard WS2812 RGB LED on GPIO 48.
 
-## Current firmware: v1.1.2
+## Current firmware: v1.1.3
 
-`firmware/src/main.cpp` is the current visitor-light firmware. v1.1.2 retains the v1.1.1 dashboard, Latest Visitor display, RGB visitor notifications, Cloudflare Worker polling, local dashboard authentication, Arduino OTA, and dashboard-only appraisal cash-register sound.
+v1.1.3 adds hands-off firmware updates while retaining the v1.1.2 Wi-Fi recovery, visitor RGB queue, Cloudflare Worker polling, Latest Visitor dashboard, local dashboard authentication, ArduinoOTA, and dashboard-only appraisal cash-register sound.
 
-### Wi-Fi recovery behavior
+### Automatic firmware updates
 
-- WiFiManager continues to save the selected Wi-Fi network in the ESP32's persistent Wi-Fi configuration.
-- A normal power cycle reconnects to the saved network without requiring setup again.
-- ESP32 automatic reconnect is enabled.
-- If the connection drops while running, firmware explicitly calls `WiFi.reconnect()` every 5 seconds.
-- If the unit remains offline for 90 seconds, it reboots into the saved-network recovery flow.
-- The WiFiManager setup portal now times out after 120 seconds rather than remaining stuck indefinitely when the router/mesh is also rebooting after a power outage. The ESP32 then restarts and retries the saved network.
-- Saved Wi-Fi is erased only through the existing **Reset Wi-Fi** action on the local dashboard.
+- The light checks GitHub Releases about 45 seconds after boot, then every 6 hours.
+- It only considers the latest published stable GitHub Release.
+- Release tags use `vMAJOR.MINOR.PATCH` and are compared numerically; firmware will not intentionally downgrade itself.
+- The required release asset is `LOKWOD_Visitor_Light.bin`.
+- Downloads use certificate-validated HTTPS and the ESP32 OTA partition.
+- A failed update leaves the currently running firmware in place and retries the release check later.
+- The dashboard shows the installed version, latest release, update status, and includes a **Check for firmware update** button.
+- The repository workflow builds `LOKWOD_Visitor_Light.bin` and automatically publishes a GitHub Release whenever `kFirmwareVersion` is bumped to a version that does not already have a release.
 
-This gives the light two recovery layers: normal ESP32 reconnect while running, followed by a full saved-network retry after a prolonged outage.
+**Important:** v1.1.3 must be installed once over USB (or the existing local Arduino OTA path). After that, future published versions can install themselves.
+
+### Persistent private device configuration
+
+Public GitHub release binaries must not contain private device credentials. v1.1.3 migrates the existing Worker URL, device token, dashboard password, OTA password, and setup password into ESP32 nonvolatile storage on the first boot. Future public release binaries preserve and reuse those stored values instead of replacing them with CI placeholder values.
+
+## Wi-Fi recovery behavior
+
+- WiFiManager saves the selected Wi-Fi network in the ESP32's persistent Wi-Fi configuration.
+- A normal power cycle reconnects to the saved network without setup.
+- ESP32 automatic reconnect remains enabled.
+- A dropped connection is explicitly retried every 5 seconds.
+- After 90 seconds offline, the unit restarts into saved-network recovery.
+- The setup portal times out after 120 seconds and retries rather than becoming permanently stranded during a router/mesh outage.
+- Saved Wi-Fi is erased only through **Reset Wi-Fi** on the local dashboard.
 
 ## Firmware project
 
@@ -32,9 +47,9 @@ firmware/
     main.cpp
 ```
 
-Private `firmware/include/secrets.h` is intentionally excluded from Git. Copy `secrets.example.h` to `secrets.h` only when setting up a new local checkout, then insert the existing private values locally.
+Private `firmware/include/secrets.h` is intentionally excluded from Git. It is used for the one-time private v1.1.3 migration build; CI builds use `secrets.example.h`, because device-specific credentials are preserved in ESP32 nonvolatile storage after migration.
 
-Build with:
+Build locally with:
 
 ```powershell
 cd firmware
@@ -46,5 +61,3 @@ Flash over USB with:
 ```powershell
 pio run -e esp32-s3-devkitc-1 -t upload
 ```
-
-A GitHub Actions workflow also performs a non-secret firmware compile check on repository updates.
