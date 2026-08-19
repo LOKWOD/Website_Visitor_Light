@@ -1,0 +1,14 @@
+--- a/firmware/src/main.cpp
++++ b/firmware/src/main.cpp
+@@ -23,7 +23,7 @@
+ #include "trusted_roots.h"
+ 
+ namespace AppConfig {
+-constexpr char kFirmwareVersion[] = "1.1.4";
++constexpr char kFirmwareVersion[] = "1.1.5";
+ constexpr char kHostname[] = "lokwod-visitor-light";
+ constexpr char kSetupAccessPoint[] = "LOKWOD-Visitor-Light";
+ constexpr uint8_t kRgbPin = 48;
+@@ -808,1 +808,1 @@
+-<section class="card"><h2>Site colors</h2><div class="legend"><div><i class="dot" style="background:rgb(0,185,255)"></i>Nautical Dream</div><div><i class="dot" style="background:rgb(0,82,255)"></i>LOKWOD</div><div><i class="dot" style="background:rgb(0,235,95)"></i>Life Simulation</div><div><i class="dot" style="background:rgb(180,35,255)"></i>Beautiful Men's Club</div><div><i class="dot" style="background:rgb(255,96,0)"></i>Mr Adventure Dad</div><div><i class="dot" style="background:rgb(255,174,0)"></i>Syracuse Appraiser</div><div><i class="dot" style="background:rgb(235,235,235);border:1px solid #aaa"></i>Accurate Appraisals</div></div></section>
++<section class="card"><h2>Site colors</h2><div class="legend"><div><i class="dot" style="background:rgb(0,185,255)"></i>Nautical Dream</div><div><i class="dot" style="background:rgb(0,82,255)"></i>LOKWOD</div><div><i class="dot" style="background:rgb(0,235,95)"></i>Life Simulation</div><div><i class="dot" style="background:rgb(180,35,255)"></i>Beautiful Men's Club</div><div><i class="dot" style="background:rgb(255,96,0)"></i>Mr Adventure Dad</div><div><i class="dot" style="background:rgb(255,174,0)"></i>Syracuse Appraiser</div><div><i class="dot" style="background:rgb(235,235,235);border:1px solid #aaa"></i>Accurate Appraisals</div><div><i class="dot" style="background:transparent;border:1px dashed #9aa7b7"></i>Dish Gal</div></div></section>
