@@ -1,0 +1,12 @@
+name: v1.1.7 CI trigger
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/release-v1.1.7-ci-trigger.yml'
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "v1.1.7 CI trigger"
