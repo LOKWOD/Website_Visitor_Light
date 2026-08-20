@@ -4,6 +4,12 @@
   "main": "cloudflare/worker.js",
   "compatibility_date": "2026-08-17",
   "keep_vars": true,
+  "exports": {
+    "VisitorHub": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    }
+  },
   "durable_objects": {
     "bindings": [
       {
