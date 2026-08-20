@@ -340,7 +340,7 @@ __name(selectPendingEvents, "selectPendingEvents");
 
 // src/index.js
 
-var SERVICE_VERSION = "1.1.3";
+var SERVICE_VERSION = "1.1.4";
 
 var STATE_KEY = "hub-state-v1";
 
@@ -1004,17 +1004,13 @@ export class VisitorHub extends DurableObject {
 
     const state = await this.loadState();
 
-    const dedupeMs = clampInteger(this.env.DEDUPE_SECONDS, 30, 3600, 300) * 1e3;
-
     const retention = clampInteger(this.env.EVENT_RETENTION, 16, 256, 64);
 
-    pruneStateMaps(state, now, dedupeMs);
+    pruneStateMaps(state, now, 0);
 
     const ipKey = typeof payload.ipKey === "string" ? payload.ipKey : "";
 
-    const visitorKey = typeof payload.visitorKey === "string" ? payload.visitorKey : "";
-
-    if (!ipKey || !visitorKey || !payload.event) {
+    if (!ipKey || !payload.event) {
 
       return jsonResponse({ ok: false, error: "invalid_record" }, 400);
 
@@ -1035,18 +1031,6 @@ export class VisitorHub extends DurableObject {
       return jsonResponse({ ok: true, ignored: "rate_limit" });
 
     }
-
-    const lastSeen = Number(state.dedupe[visitorKey] || 0);
-
-    if (lastSeen && now - lastSeen < dedupeMs) {
-
-      await this.saveState(state);
-
-      return jsonResponse({ ok: true, ignored: "duplicate" });
-
-    }
-
-    state.dedupe[visitorKey] = now;
 
     const event = appendEvent(state, payload.event, now, retention);
 
