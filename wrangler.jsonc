@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "lokwod-visitor-beacon",
+  "main": "cloudflare/worker.js",
+  "compatibility_date": "2026-08-17",
+  "keep_vars": true,
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "VISITOR_HUB",
+        "class_name": "VisitorHub"
+      }
+    ]
+  },
+  "observability": {
+    "enabled": true
+  }
+}
