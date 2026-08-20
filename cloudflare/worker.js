@@ -262,23 +262,9 @@ function browserBeaconSource() {
 
   const endpoint = new URL("/v1/hit", script.src).href;
 
-  let sent = false;
+  const sendPayload = (details) => {
 
-  const send = () => {
-
-    if (sent || document.visibilityState === "prerender") return;
-
-    sent = true;
-
-    const payload = JSON.stringify({
-
-      site,
-
-      path: location.pathname || "/",
-
-      title: document.title || "",
-
-    });
+    const payload = JSON.stringify({ site, ...details });
 
     const body = new Blob([payload], { type: "text/plain;charset=UTF-8" });
 
@@ -300,13 +286,53 @@ function browserBeaconSource() {
 
   };
 
+  let visitSent = false;
+
+  const sendVisit = () => {
+
+    if (visitSent || document.visibilityState === "prerender") return;
+
+    visitSent = true;
+
+    sendPayload({
+
+      kind: "visit",
+
+      path: location.pathname || "/",
+
+      title: document.title || "",
+
+    });
+
+  };
+
+  document.addEventListener("click", (event) => {
+
+    const target = event.target instanceof Element ? event.target : null;
+
+    const link = target ? target.closest('a[data-affiliate-active="true"]') : null;
+
+    if (!link) return;
+
+    sendPayload({
+
+      kind: "affiliate_click",
+
+      path: location.pathname || "/",
+
+      title: (link.textContent || document.title || "Affiliate link").trim().slice(0, 140),
+
+    });
+
+  }, { capture: true });
+
   if (document.readyState === "complete") {
 
-    setTimeout(send, 250);
+    setTimeout(sendVisit, 250);
 
   } else {
 
-    addEventListener("load", () => setTimeout(send, 250), { once: true });
+    addEventListener("load", () => setTimeout(sendVisit, 250), { once: true });
 
   }
 
@@ -368,7 +394,7 @@ __name(selectPendingEvents, "selectPendingEvents");
 
 // src/index.js
 
-var SERVICE_VERSION = "1.1.5";
+var SERVICE_VERSION = "1.2.0";
 
 var STATE_KEY = "hub-state-v1";
 
@@ -856,7 +882,7 @@ function initialState() {
 
     rate: {},
 
-    stats: { day: "", total: 0, sites: {} }
+    stats: { day: "", total: 0, sites: {}, affiliateClicks: 0 }
 
   };
 
@@ -880,11 +906,13 @@ function normalizeState(value) {
 
   state.rate = state.rate && typeof state.rate === "object" ? state.rate : {};
 
-  state.stats = state.stats && typeof state.stats === "object" ? state.stats : { day: "", total: 0, sites: {} };
+  state.stats = state.stats && typeof state.stats === "object" ? state.stats : { day: "", total: 0, sites: {}, affiliateClicks: 0 };
 
   state.stats.day = typeof state.stats.day === "string" ? state.stats.day : "";
 
   state.stats.total = Number.isSafeInteger(state.stats.total) ? state.stats.total : 0;
+
+  state.stats.affiliateClicks = Number.isSafeInteger(state.stats.affiliateClicks) ? state.stats.affiliateClicks : 0;
 
   state.stats.sites = state.stats.sites && typeof state.stats.sites === "object" ? state.stats.sites : {};
 
@@ -898,7 +926,7 @@ function resetDailyStatsIfNeeded(state, now) {
 
   const day = calendarDayInTimeZone(now);
 
-  if (state.stats.day !== day) state.stats = { day, total: 0, sites: {} };
+  if (state.stats.day !== day) state.stats = { day, total: 0, sites: {}, affiliateClicks: 0 };
 
 }
 
@@ -938,9 +966,17 @@ function appendEvent(state, event, now, retention) {
 
   resetDailyStatsIfNeeded(state, now);
 
-  state.stats.total += 1;
+  if (stored.kind === "affiliate_click") {
 
-  state.stats.sites[stored.site] = (state.stats.sites[stored.site] || 0) + 1;
+    state.stats.affiliateClicks += 1;
+
+  } else {
+
+    state.stats.total += 1;
+
+    state.stats.sites[stored.site] = (state.stats.sites[stored.site] || 0) + 1;
+
+  }
 
   return stored;
 
@@ -1226,6 +1262,8 @@ async function handleHit(request, env) {
 
   const site = getSiteConfig(siteId);
 
+  const kind = payload.kind === "affiliate_click" ? "affiliate_click" : "visit";
+
   if (!site || !isAllowedSiteOrigin(siteId, origin)) {
 
     return jsonResponse({ ok: false, error: "origin_not_allowed" }, 403);
@@ -1246,13 +1284,17 @@ async function handleHit(request, env) {
 
   const visitorKey = await sha256Hex(`${identity.visitorSeed}|${siteId}`);
 
+  const isAffiliateClick = kind === "affiliate_click";
+
   const event = {
 
     site: siteId,
 
-    label: site.label,
+    kind,
 
-    color: [...site.color],
+    label: isAffiliateClick ? `Affiliate click · ${site.label}` : site.label,
+
+    color: isAffiliateClick ? [255, 215, 0] : [...site.color],
 
     path: sanitizeText(payload.path || "/", 180) || "/",
 
