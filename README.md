@@ -2,9 +2,9 @@
 
 ESP32-S3 website visitor indicator using the onboard WS2812 RGB LED on GPIO 48.
 
-## Current firmware: v1.1.8
+## Current firmware: v1.1.9
 
-v1.1.8 adds device heartbeat reporting without changing the visitor-light event path.
+v1.1.9 gives every configured website a distinct dashboard swatch and cloud-test option. It preserves the v1.1.8 heartbeat reporting and the existing visitor-light event path.
 
 ### Device heartbeat
 
