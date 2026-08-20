@@ -214,7 +214,7 @@ function browserBeaconSource() {
 
   try {
 
-    if (window\.top !== window\.self) return;
+    if (window.top !== window.self) return;
 
   } catch {
 
@@ -878,7 +878,7 @@ __name(resetDailyStatsIfNeeded, "resetDailyStatsIfNeeded");
 
 function pruneStateMaps(state, now, dedupeMs) {
 
-  const dedupeCutoff = now - Math.max(dedupeMs \* 12, 36e5);
+  const dedupeCutoff = now - Math.max(dedupeMs * 12, 36e5);
 
   for (const [key, timestamp] of Object.entries(state.dedupe)) {
 
@@ -1004,7 +1004,7 @@ export class VisitorHub extends DurableObject {
 
     const state = await this.loadState();
 
-    const dedupeMs = clampInteger(this.env.DEDUPE_SECONDS, 30, 3600, 300) \* 1e3;
+    const dedupeMs = clampInteger(this.env.DEDUPE_SECONDS, 30, 3600, 300) * 1e3;
 
     const retention = clampInteger(this.env.EVENT_RETENTION, 16, 256, 64);
 
@@ -1392,7 +1392,7 @@ var index_default = {
 
           "Cache-Control": "public, max-age=300, stale-while-revalidate=86400",
 
-          "Access-Control-Allow-Origin": "\*",
+          "Access-Control-Allow-Origin": "*",
 
           "X-Content-Type-Options": "nosniff"
 
