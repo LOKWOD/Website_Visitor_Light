@@ -94,11 +94,39 @@ var SITE_CONFIG = Object.freeze({
 
     label: "Dish Gal",
 
-    // Neutral white fallback until a permanent Dish Gal light color is chosen.
-
-    color: Object.freeze([255, 255, 255]),
+    color: Object.freeze([255, 0, 140]),
 
     domains: Object.freeze(["dishgal.com"])
+
+  }),
+
+  blappos: Object.freeze({
+
+    label: "Blappos",
+
+    color: Object.freeze([0, 255, 180]),
+
+    domains: Object.freeze(["blappos.com"])
+
+  }),
+
+  "big-bud-man": Object.freeze({
+
+    label: "Big Bud Man",
+
+    color: Object.freeze([170, 255, 0]),
+
+    domains: Object.freeze(["bigbudman.com"])
+
+  }),
+
+  "the-crypto-appraiser": Object.freeze({
+
+    label: "The Crypto Appraiser",
+
+    color: Object.freeze([75, 0, 255]),
+
+    domains: Object.freeze(["thecryptoappraiser.com"])
 
   })
 
@@ -340,7 +368,7 @@ __name(selectPendingEvents, "selectPendingEvents");
 
 // src/index.js
 
-var SERVICE_VERSION = "1.1.4";
+var SERVICE_VERSION = "1.1.5";
 
 var STATE_KEY = "hub-state-v1";
 

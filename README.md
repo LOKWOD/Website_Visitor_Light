@@ -38,6 +38,27 @@ The production Worker must keep its existing device Bearer-token authorization o
 - The dashboard shows accepted visits, Worker connectivity, the latest visitor, approximate visitor area, event queue depth, uptime, firmware status, and heartbeat state.
 - Full visitor IP addresses are not displayed on the dashboard.
 
+## Tracked site colors
+
+Every tracked website has its own visibly separated RGB color. The Worker is the canonical color source sent with each visitor event.
+
+| Website | Site ID | LED color | RGB |
+|---|---|---:|---:|
+| NauticalDream.com | `nautical-dream` | Aqua | `0, 185, 255` |
+| LOKWOD.com | `lokwod` | Blue | `0, 82, 255` |
+| LifeInTheSimulation.com | `life-in-the-simulation` | Green | `0, 235, 95` |
+| BeautifulMensClub.com | `beautiful-mens-club` | Purple | `180, 35, 255` |
+| MrAdventureDad.com | `mr-adventure-dad` | Orange | `255, 96, 0` |
+| SyracuseAppraiser.com | `syracuse-appraiser` | Amber | `255, 174, 0` |
+| AccurateREAppraisals.com | `accurate-re-appraisals` | White | `235, 235, 235` |
+| AccurateREAppraisals.org | `accurate-re-appraisals-org` | Red | `255, 0, 0` |
+| DishGal.com | `dish-gal` | Hot pink | `255, 0, 140` |
+| Blappos.com | `blappos` | Teal | `0, 255, 180` |
+| BigBudMan.com | `big-bud-man` | Lime | `170, 255, 0` |
+| TheCryptoAppraiser.com | `the-crypto-appraiser` | Indigo | `75, 0, 255` |
+
+Run `node cloudflare/validate-site-colors.mjs` after changing the map. The validator rejects missing sites, duplicate RGB values, and colors that are too visually close.
+
 ## Automatic firmware updates
 
 - The light checks for firmware updates after boot and then every 6 hours.
@@ -91,3 +112,4 @@ Flash over USB with:
 ```powershell
 pio run -e esp32-s3-devkitc-1 -t upload
 ```
+
