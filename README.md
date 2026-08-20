@@ -2,9 +2,11 @@
 
 ESP32-S3 website visitor indicator using the onboard WS2812 RGB LED on GPIO 48.
 
-## Current firmware: v1.1.9
+## Current firmware: v1.1.10
 
-v1.1.9 gives every configured website a distinct dashboard swatch and cloud-test option. It preserves the v1.1.8 heartbeat reporting and the existing visitor-light event path.
+v1.1.10 adds private affiliate-click notifications. An active affiliate link click produces a gold six-pulse LED event. The optional cash-register sound is generated only by the owner's authenticated local Visitor Light dashboard after the owner enables it; public website visitors never hear it.
+
+The ESP32-S3 board itself has an RGB LED but no speaker. Audible notifications therefore play through the phone or computer displaying the private local dashboard. Adding sound directly to the physical device requires buzzer or speaker hardware.
 
 ### Device heartbeat
 
@@ -112,4 +114,3 @@ Flash over USB with:
 ```powershell
 pio run -e esp32-s3-devkitc-1 -t upload
 ```
-

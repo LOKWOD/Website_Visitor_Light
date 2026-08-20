@@ -1,0 +1,97 @@
+name: Release Visitor Light v1.1.10
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v1.1.10.yml'
+      - '.github/scripts/prepare-v1.1.10.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: visitor-light-v1-1-10-release
+  cancel-in-progress: false
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Prepare v1.1.10 source
+        shell: bash
+        run: |
+          if grep -Fq 'constexpr char kFirmwareVersion[] = "1.1.3";' firmware/src/main.cpp; then
+            set +e
+            git apply --reject --recount firmware/patches/v1.1.4-saveable-passwords.patch
+            PATCH_STATUS=$?
+            set -e
+            if [ "$PATCH_STATUS" -ne 0 ]; then
+              echo "Compatibility patch had source drift; preparation scripts will repair and validate the known security-route hunk."
+            fi
+          fi
+          python .github/scripts/prepare-v1.1.7.py
+          python .github/scripts/prepare-v1.1.8.py
+          python .github/scripts/prepare-v1.1.9.py
+          python .github/scripts/prepare-v1.1.10.py
+          grep -F 'constexpr char kFirmwareVersion[] = "1.1.10";' firmware/src/main.cpp
+          grep -F 'kind == "affiliate_click" ? 6 : 3' firmware/src/main.cpp
+          grep -F 'affiliate clicks only' firmware/src/main.cpp
+          grep -F 'Public website visitors never hear it.' firmware/src/main.cpp
+
+      - name: Validate canonical Worker site colors
+        run: node cloudflare/validate-site-colors.mjs
+
+      - name: Validate dashboard JavaScript
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('firmware/src/main.cpp').read_text(encoding='utf-8')
+          start = source.index('<script>') + len('<script>')
+          end = source.index('</script>', start)
+          Path('/tmp/visitor-light-dashboard.js').write_text(source[start:end], encoding='utf-8')
+          PY
+          node --check /tmp/visitor-light-dashboard.js
+
+      - name: Supply non-secret build configuration
+        run: cp firmware/include/secrets.example.h firmware/include/secrets.h
+
+      - name: Compile ESP32-S3 firmware
+        run: pio run -d firmware -e esp32-s3-devkitc-1
+
+      - name: Prepare release asset
+        run: |
+          cp firmware/.pio/build/esp32-s3-devkitc-1/firmware.bin LOKWOD_Visitor_Light.bin
+          sha256sum LOKWOD_Visitor_Light.bin > SHA256SUMS.txt
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LOKWOD-Visitor-Light-v1.1.10
+          path: |
+            LOKWOD_Visitor_Light.bin
+            SHA256SUMS.txt
+
+      - name: Publish v1.1.10 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          NOTES="LOKWOD Website Visitor Light v1.1.10. Affiliate-link clicks arrive as separate gold six-pulse events. The optional cash-register sound plays only in the owner's authenticated local Visitor Light dashboard after it is enabled; public website visitors never hear it."
+          if gh release view v1.1.10 >/dev/null 2>&1; then
+            gh release upload v1.1.10 LOKWOD_Visitor_Light.bin SHA256SUMS.txt --clobber
+            gh release edit v1.1.10 --notes "$NOTES"
+          else
+            gh release create v1.1.10 LOKWOD_Visitor_Light.bin SHA256SUMS.txt --target "$GITHUB_SHA" --title "LOKWOD Visitor Light v1.1.10" --notes "$NOTES"
+          fi
