@@ -2,7 +2,8 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "lokwod-visitor-beacon",
   "main": "cloudflare/worker.js",
-  "compatibility_date": "2026-08-17",
+  "compatibility_date": "2026-08-24",
+  "compatibility_flags": ["nodejs_compat"],
   "keep_vars": true,
   "exports": {
     "VisitorHub": {

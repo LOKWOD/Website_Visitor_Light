@@ -2,9 +2,11 @@
 
 ESP32-S3 website visitor indicator using the onboard WS2812 RGB LED on GPIO 48.
 
-## Current firmware: v1.1.10
+## Current firmware: v1.1.11
 
-v1.1.10 adds private affiliate-click notifications. An active affiliate link click produces a gold six-pulse LED event. The optional cash-register sound is generated only by the owner's authenticated local Visitor Light dashboard after the owner enables it; public website visitors never hear it.
+v1.1.11 adds a private **Last 50 visitors** table to the authenticated local dashboard. Each new event records its timestamp, full visitor IP address, approximate city/region/country, referrer/source, destination website, page path, page title or affiliate link, visitor ID, and event type. The browser never receives the private Worker device token; the ESP32 uses it to proxy the history from the Worker into the password-protected dashboard.
+
+v1.1.10 added private affiliate-click notifications. An active affiliate link click produces a gold six-pulse LED event. The optional cash-register sound is generated only by the owner's authenticated local Visitor Light dashboard after the owner enables it; public website visitors never hear it.
 
 The ESP32-S3 board itself has an RGB LED but no speaker. Audible notifications therefore play through the phone or computer displaying the private local dashboard. Adding sound directly to the physical device requires buzzer or speaker hardware.
 
@@ -38,7 +40,9 @@ The production Worker must keep its existing device Bearer-token authorization o
 - The light polls the configured Cloudflare Worker every 3 seconds.
 - New visitor events are queued and flash the onboard RGB LED using each site's assigned color.
 - The dashboard shows accepted visits, Worker connectivity, the latest visitor, approximate visitor area, event queue depth, uptime, firmware status, and heartbeat state.
-- Full visitor IP addresses are not displayed on the dashboard.
+- The authenticated dashboard shows the 50 newest visitor/affiliate events with full IP, approximate area, referrer/source, and destination page.
+- Raw visitor IP addresses and referrers are available only through the device-token-protected `/v1/history` Worker route and the password-protected ESP32 dashboard.
+- History collection starts when the v1.3.0 Worker is deployed; older retained events can show `Not recorded` for fields the previous Worker did not save.
 
 ## Tracked site colors
 

@@ -1,0 +1,134 @@
+name: Release Visitor Light v1.1.11
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v1.1.11.yml'
+      - 'cloudflare/worker.js'
+      - 'cloudflare/worker.test.mjs'
+      - 'firmware/src/main.cpp'
+      - 'firmware/include/**'
+      - 'firmware/platformio.ini'
+      - 'wrangler.jsonc'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: visitor-light-v1-1-11-release
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Test Worker history and privacy behavior
+        run: node --test cloudflare/worker.test.mjs
+
+      - name: Validate Worker and dashboard JavaScript
+        shell: bash
+        run: |
+          node --check cloudflare/worker.js
+          node cloudflare/validate-site-colors.mjs
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const source = fs.readFileSync('firmware/src/main.cpp', 'utf8');
+          const start = source.indexOf('<script>') + '<script>'.length;
+          const end = source.indexOf('</script>', start);
+          if (start < '<script>'.length || end < 0) throw new Error('Dashboard script not found.');
+          new Function(source.slice(start, end));
+          console.log('Dashboard JavaScript syntax OK.');
+          NODE
+
+      - name: Validate Cloudflare Worker bundle
+        run: npx --yes wrangler@4.125.0 deploy --dry-run --outdir .wrangler-dry-run
+
+  firmware:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PlatformIO
+        run: pip install platformio==6.1.19
+
+      - name: Validate v1.1.11 source
+        shell: bash
+        run: |
+          grep -F 'constexpr char kFirmwareVersion[] = "1.1.11";' firmware/src/main.cpp
+          grep -F 'webServer.on("/api/history", HTTP_GET, handleHistoryApi);' firmware/src/main.cpp
+          grep -F 'Last 50 visitors' firmware/src/main.cpp
+          grep -F '/v1/history?limit=50' firmware/src/main.cpp
+          grep -F 'kind == "affiliate_click" ? 6 : 3' firmware/src/main.cpp
+
+      - name: Supply non-secret build configuration
+        run: cp firmware/include/secrets.example.h firmware/include/secrets.h
+
+      - name: Compile ESP32-S3 firmware
+        run: pio run -d firmware -e esp32-s3-devkitc-1
+
+      - name: Prepare release asset
+        run: |
+          cp firmware/.pio/build/esp32-s3-devkitc-1/firmware.bin LOKWOD_Visitor_Light.bin
+          sha256sum LOKWOD_Visitor_Light.bin > SHA256SUMS.txt
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LOKWOD-Visitor-Light-v1.1.11
+          path: |
+            LOKWOD_Visitor_Light.bin
+            SHA256SUMS.txt
+
+      - name: Publish v1.1.11 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          NOTES="LOKWOD Website Visitor Light v1.1.11. Adds a private Last 50 Visitors dashboard with full visitor IP, timestamp, referrer/source, destination site/page/title, visitor ID, event type, and approximate location. History is proxied through the ESP32 so the Worker device token is never exposed to the dashboard browser."
+          if gh release view v1.1.11 >/dev/null 2>&1; then
+            gh release upload v1.1.11 LOKWOD_Visitor_Light.bin SHA256SUMS.txt --clobber
+            gh release edit v1.1.11 --notes "$NOTES"
+          else
+            gh release create v1.1.11 LOKWOD_Visitor_Light.bin SHA256SUMS.txt --target "$GITHUB_SHA" --title "LOKWOD Visitor Light v1.1.11" --notes "$NOTES"
+          fi
+
+  deploy-worker:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Cloudflare deployment credentials
+        id: cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            echo 'Cloudflare deploy skipped because CLOUDFLARE_API_TOKEN and/or CLOUDFLARE_ACCOUNT_ID is not configured.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Deploy production Visitor Light Worker
+        if: steps.cloudflare.outputs.ready == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy --keep-vars

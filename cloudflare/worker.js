@@ -152,6 +152,46 @@ function sanitizeText(value, maxLength) {
 
 __name(sanitizeText, "sanitizeText");
 
+function sanitizeIpAddress(value) {
+
+  const ip = sanitizeText(String(value ?? ""), 64);
+
+  return /^[0-9a-f:.]+$/i.test(ip) ? ip : "";
+
+}
+
+__name(sanitizeIpAddress, "sanitizeIpAddress");
+
+function sanitizeReferrer(value) {
+
+  const raw = sanitizeText(value, 500);
+
+  if (!raw) return "";
+
+  try {
+
+    const parsed = new URL(raw);
+
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return "";
+
+    parsed.username = "";
+
+    parsed.password = "";
+
+    parsed.hash = "";
+
+    return parsed.toString().slice(0, 500);
+
+  } catch {
+
+    return "";
+
+  }
+
+}
+
+__name(sanitizeReferrer, "sanitizeReferrer");
+
 function normalizeOrigin(origin) {
 
   if (typeof origin !== "string" || origin.length > 300) return null;
@@ -302,6 +342,8 @@ function browserBeaconSource() {
 
       title: document.title || "",
 
+      referrer: document.referrer || "",
+
     });
 
   };
@@ -321,6 +363,8 @@ function browserBeaconSource() {
       path: location.pathname || "/",
 
       title: (link.textContent || document.title || "Affiliate link").trim().slice(0, 140),
+
+      referrer: document.referrer || "",
 
     });
 
@@ -394,7 +438,7 @@ __name(selectPendingEvents, "selectPendingEvents");
 
 // src/index.js
 
-var SERVICE_VERSION = "1.2.0";
+var SERVICE_VERSION = "1.3.0";
 
 var STATE_KEY = "hub-state-v1";
 
@@ -824,13 +868,15 @@ __name(sha256Hex, "sha256Hex");
 
 async function requestIdentity(request, env) {
 
-  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  const ip = sanitizeIpAddress(request.headers.get("CF-Connecting-IP")) || "unknown";
 
   const userAgent = request.headers.get("User-Agent") || "unknown";
 
   const salt = env.FINGERPRINT_SALT || "missing-salt";
 
   return {
+
+    ip,
 
     ipKey: await sha256Hex(`${salt}|ip|${ip}`),
 
@@ -1032,6 +1078,12 @@ export class VisitorHub extends DurableObject {
 
       }
 
+      if (request.method === "POST" && url.pathname === "/internal/history") {
+
+        return await this.history(await readSmallJson(request));
+
+      }
+
       if (request.method === "POST" && url.pathname === "/internal/test") {
 
         return await this.test(await readSmallJson(request));
@@ -1068,7 +1120,7 @@ export class VisitorHub extends DurableObject {
 
     const state = await this.loadState();
 
-    const retention = clampInteger(this.env.EVENT_RETENTION, 16, 256, 64);
+    const retention = clampInteger(this.env.EVENT_RETENTION, 64, 256, 128);
 
     pruneStateMaps(state, now, 0);
 
@@ -1146,6 +1198,28 @@ export class VisitorHub extends DurableObject {
 
   }
 
+  async history(payload) {
+
+    const state = await this.loadState();
+
+    const limit = clampInteger(payload.limit, 1, 50, 50);
+
+    const visitors = state.events.filter((event) => event?.test !== true).slice(-limit).reverse();
+
+    return jsonResponse({
+
+      ok: true,
+
+      visitors,
+
+      count: visitors.length,
+
+      retained: state.events.length
+
+    });
+
+  }
+
   async test(payload) {
 
     const now = Date.now();
@@ -1156,7 +1230,7 @@ export class VisitorHub extends DurableObject {
 
     const config = getSiteConfig(siteId) || getSiteConfig("lokwod");
 
-    const retention = clampInteger(this.env.EVENT_RETENTION, 16, 256, 64);
+    const retention = clampInteger(this.env.EVENT_RETENTION, 64, 256, 128);
 
     const event = appendEvent(
 
@@ -1284,6 +1358,8 @@ async function handleHit(request, env) {
 
   const visitorKey = await sha256Hex(`${identity.visitorSeed}|${siteId}`);
 
+  const visitorId = visitorKey.slice(0, 10).toUpperCase();
+
   const isAffiliateClick = kind === "affiliate_click";
 
   const event = {
@@ -1299,6 +1375,12 @@ async function handleHit(request, env) {
     path: sanitizeText(payload.path || "/", 180) || "/",
 
     title: sanitizeText(payload.title || "", 140),
+
+    referrer: sanitizeReferrer(payload.referrer || ""),
+
+    ip: identity.ip,
+
+    visitorId,
 
     city: sanitizeText(cf?.city || "", 80),
 
@@ -1359,6 +1441,28 @@ async function handleEvents(request, env, url) {
 }
 
 __name(handleEvents, "handleEvents");
+
+async function handleHistory(request, env, url) {
+
+  if (!isAuthorized(request, env)) return jsonResponse({ ok: false, error: "unauthorized" }, 401);
+
+  const limit = clampInteger(url.searchParams.get("limit"), 1, 50, 50);
+
+  const response = await getHub(env).fetch("https://visitor-hub/internal/history", {
+
+    method: "POST",
+
+    headers: { "Content-Type": "application/json" },
+
+    body: JSON.stringify({ limit })
+
+  });
+
+  return forwardHubResponse(response);
+
+}
+
+__name(handleHistory, "handleHistory");
 
 async function handleTest(request, env) {
 
@@ -1459,6 +1563,8 @@ var index_default = {
     if (request.method === "POST" && url.pathname === "/v1/hit") return handleHit(request, env);
 
     if (request.method === "GET" && url.pathname === "/v1/events") return handleEvents(request, env, url);
+
+    if (request.method === "GET" && url.pathname === "/v1/history") return handleHistory(request, env, url);
 
     if (request.method === "POST" && url.pathname === "/v1/test") return handleTest(request, env);
 

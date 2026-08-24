@@ -2,9 +2,11 @@
 
 Target board: QIQIAZI / ESP32-S3-DevKitC-1 N16R8 with the onboard WS2812 RGB LED on GPIO 48.
 
-## v1.1.3 one-time installation
+## Current release: v1.1.11
 
-Install v1.1.3 once using USB or the existing local Arduino OTA mechanism. On the first v1.1.3 boot, the firmware migrates the current private Worker/device and local-access credentials into ESP32 Preferences so later public GitHub release binaries can update the unit without embedding those secrets.
+v1.1.11 adds a private Last 50 Visitors table with timestamp, full visitor IP, source/referrer, destination site/page/title, and approximate location. The ESP32 proxies the authenticated Worker history feed so the device token is never sent to the dashboard browser.
+
+Existing devices update automatically through the connected Cloudflare Worker. For a fresh device, install the current firmware once using USB or local Arduino OTA. Private Worker/device and local-access credentials are stored in ESP32 Preferences so later public GitHub release binaries can update the unit without embedding those secrets.
 
 After migration, the light checks the latest published GitHub Release about 45 seconds after boot and every 6 hours. If the release contains a higher `vMAJOR.MINOR.PATCH` tag plus `LOKWOD_Visitor_Light.bin`, it downloads and installs the firmware over certificate-validated HTTPS and reboots automatically.
 
@@ -14,6 +16,7 @@ The local dashboard shows:
 - latest GitHub release discovered
 - automatic update status
 - **Check for firmware update** button for an immediate test
+- Last 50 visitor events with IP, source, destination, and approximate area
 
 ## First USB upload / fresh device
 
@@ -34,6 +37,6 @@ On a fresh device, the board creates `LOKWOD-Visitor-Light`. Existing installati
 - First poll bootstraps at the current cursor so historical visits do not flash.
 - Event cursor persists through restarts.
 - Wi-Fi reconnect retry every five seconds with a restart fallback after a prolonged outage.
-- Local RGB test, end-to-end cloud test, Latest Visitor card, and appraisal-site cash-register sound remain available.
+- Local RGB test, end-to-end cloud test, Latest Event card, visitor history, and affiliate-click cash-register sound remain available.
 - ArduinoOTA remains available as a local maintenance fallback.
-- GitHub Release OTA is the normal hands-off update path from v1.1.3 onward.
+- GitHub Release OTA through the Cloudflare Worker is the normal hands-off update path.
