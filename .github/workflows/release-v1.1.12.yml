@@ -85,5 +85,7 @@ jobs:
             gh release upload v1.1.12 LOKWOD_Visitor_Light.bin SHA256SUMS.txt --clobber
             gh release edit v1.1.12 --notes "$NOTES"
           else
-            gh release create v1.1.12 LOKWOD_Visitor_Light.bin SHA256SUMS.txt --target "$GITHUB_SHA" --title "LOKWOD Visitor Light v1.1.12" --notes "$NOTES"
+            git tag v1.1.12
+            git push origin v1.1.12
+            gh release create v1.1.12 LOKWOD_Visitor_Light.bin SHA256SUMS.txt --title "LOKWOD Visitor Light v1.1.12" --notes "$NOTES"
           fi
