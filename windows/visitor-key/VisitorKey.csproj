@@ -7,7 +7,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>LOKWODVisitorKey</AssemblyName>
     <RootNamespace>LOKWOD.VisitorKey</RootNamespace>
-    <Version>1.0.4</Version>
+    <Version>1.0.5</Version>
   </PropertyGroup>
   <ItemGroup>
     <None Include="$(ProgramFiles)\IO Center\hidapi.dll" Link="hidapi.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(ProgramFiles)\IO Center\hidapi.dll')" />

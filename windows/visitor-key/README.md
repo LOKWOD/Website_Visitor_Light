@@ -2,6 +2,11 @@
 
 Windows companion for the be quiet! Dark Mount and the LOKWOD Website Visitor Light.
 
+## v1.0.5 polling repair
+
+- Treats a short ESP32 HTTP timeout as a recoverable polling failure instead of silently ending the entire visitor poller until the watchdog restarts it.
+- Keeps checking every two seconds after a timeout, so visitor notifications are delivered promptly when the ESP32 becomes available again.
+
 ## v1.0.4 reliability repair
 
 - Closes each ESP32 status/login connection after its response so the companion cannot occupy the Visitor Light's small web server and freeze the dashboard or cloud polling.
@@ -45,7 +50,7 @@ The app allows only QLink session commands and Display Key image read/write comm
 
 ## Install
 
-Download and extract `LOKWOD-Visitor-Key-v1.0.4-win-x64.zip`, then double-click `INSTALL.cmd`. The installer preserves the saved dashboard password and original key images, removes Windows' downloaded-file block, updates the Startup shortcut, and launches the repaired companion.
+Download and extract `LOKWOD-Visitor-Key-v1.0.5-win-x64.zip`, then double-click `INSTALL.cmd`. The installer preserves the saved dashboard password and original key images, removes Windows' downloaded-file block, updates the Startup shortcut, and launches the repaired companion.
 
 ## Build
 

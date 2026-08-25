@@ -61,4 +61,4 @@ Start-Process -FilePath (Join-Path $appRoot 'LOKWODVisitorKey.exe') -WorkingDire
 
 Write-Host "Installed: $appRoot"
 Write-Host "Startup shortcut: $shortcutPath"
-Write-Host 'LOKWOD Visitor Key v1.0.4 is running.'
+Write-Host 'LOKWOD Visitor Key v1.0.5 is running.'

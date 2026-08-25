@@ -10,7 +10,7 @@ namespace LOKWOD.VisitorKey
 {
     internal sealed class VisitorKeyContext : ApplicationContext
     {
-        private const string AppVersion = "1.0.4";
+        private const string AppVersion = "1.0.5";
         private readonly NotifyIcon _tray;
         private readonly CancellationTokenSource _stop = new CancellationTokenSource();
         private readonly WindowsFormsSynchronizationContext _ui = new WindowsFormsSynchronizationContext();
@@ -127,16 +127,14 @@ namespace LOKWOD.VisitorKey
                     }
                     Ui(() => _tray.Text = status.WorkerConnected ? "LOKWOD Visitor Key — connected" : "LOKWOD Visitor Key — Visitor Light offline");
                 }
+                catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+                {
+                    RecordPollingFailure(generation, exception);
+                }
                 catch (OperationCanceledException) { return; }
                 catch (Exception exception)
                 {
-                    int failures = Interlocked.Increment(ref _consecutiveFailures);
-                    Ui(() => _tray.Text = "LOKWOD Visitor Key — connection problem");
-                    Debug.WriteLine(exception);
-                    if (failures == 1 || failures % 10 == 0)
-                        AppLog.Write($"Visitor polling failed ({failures} consecutive failures).", exception);
-                    if (failures >= 3 && generation == _pollGeneration)
-                        ReplaceClient(generation);
+                    RecordPollingFailure(generation, exception);
                 }
                 try { await Task.Delay(2000, cancellationToken).ConfigureAwait(false); }
                 catch (OperationCanceledException) { return; }
@@ -260,6 +258,17 @@ namespace LOKWOD.VisitorKey
 
         private VisitorLightClient CreateClient() =>
             new VisitorLightClient(_settings.DeviceUrl, SecureSettings.Unprotect(_settings.ProtectedPassword));
+
+        private void RecordPollingFailure(int generation, Exception exception)
+        {
+            int failures = Interlocked.Increment(ref _consecutiveFailures);
+            Ui(() => _tray.Text = "LOKWOD Visitor Key — connection problem");
+            Debug.WriteLine(exception);
+            if (failures == 1 || failures % 10 == 0)
+                AppLog.Write($"Visitor polling failed ({failures} consecutive failures).", exception);
+            if (failures >= 3 && generation == _pollGeneration)
+                ReplaceClient(generation);
+        }
 
         private void ReplaceClient(int generation)
         {

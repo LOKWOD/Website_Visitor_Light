@@ -15,8 +15,8 @@ jobs:
   build:
     runs-on: windows-latest
     env:
-      RELEASE_TAG: visitor-key-v1.0.4
-      RELEASE_ZIP: LOKWOD-Visitor-Key-v1.0.4-win-x64.zip
+      RELEASE_TAG: visitor-key-v1.0.5
+      RELEASE_ZIP: LOKWOD-Visitor-Key-v1.0.5-win-x64.zip
     steps:
       - uses: actions/checkout@v4
 
@@ -44,7 +44,7 @@ jobs:
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: LOKWOD-Visitor-Key-v1.0.4-win-x64
+          name: LOKWOD-Visitor-Key-v1.0.5-win-x64
           path: ${{ env.RELEASE_ZIP }}
           if-no-files-found: error
 
@@ -60,6 +60,6 @@ jobs:
             git tag $env:RELEASE_TAG
             git push origin $env:RELEASE_TAG
             gh release create $env:RELEASE_TAG $env:RELEASE_ZIP `
-              --title "LOKWOD Visitor Key v1.0.4" `
-              --notes "Reliability repair: closes every ESP dashboard request so the companion cannot freeze the dashboard or visitor polling, finds the Dark Mount LampArray through its Windows MI_03 path when hidapi omits the interface number, and shows v1.0.4 in the tray menu and diagnostic log. Visitor-only alerts and display key 4 remain enabled."
+              --title "LOKWOD Visitor Key v1.0.5" `
+              --notes "Polling repair: treats a short ESP HTTP timeout as a recoverable request failure instead of silently stopping the entire visitor poller. Keeps the v1.0.4 connection-close protection, version display, visitor-only notifications, display key 4, and Dark Mount lighting diagnostics."
           }
