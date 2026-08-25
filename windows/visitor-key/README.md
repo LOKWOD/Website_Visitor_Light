@@ -2,6 +2,13 @@
 
 Windows companion for the be quiet! Dark Mount and the LOKWOD Website Visitor Light.
 
+## v1.0.4 reliability repair
+
+- Closes each ESP32 status/login connection after its response so the companion cannot occupy the Visitor Light's small web server and freeze the dashboard or cloud polling.
+- Finds the keyboard's LampArray through its Windows `MI_03` device path when the installed `hidapi.dll` omits interface metadata.
+- Shows the exact app version at the top of the tray menu and records it at startup in the diagnostic log.
+- Logs successful display-key updates and keyboard-light flashes separately.
+
 ## v1.0.3 installer and flash repair
 
 - Removes Windows' downloaded-file block before testing or launching the companion.
@@ -38,7 +45,7 @@ The app allows only QLink session commands and Display Key image read/write comm
 
 ## Install
 
-Download and extract `LOKWOD-Visitor-Key-v1.0.3-win-x64.zip`, then double-click `INSTALL.cmd`. The installer preserves the saved dashboard password and original key images, removes Windows' downloaded-file block, updates the Startup shortcut, and launches the repaired companion.
+Download and extract `LOKWOD-Visitor-Key-v1.0.4-win-x64.zip`, then double-click `INSTALL.cmd`. The installer preserves the saved dashboard password and original key images, removes Windows' downloaded-file block, updates the Startup shortcut, and launches the repaired companion.
 
 ## Build
 

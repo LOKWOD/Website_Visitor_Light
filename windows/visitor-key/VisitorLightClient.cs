@@ -61,6 +61,10 @@ namespace LOKWOD.VisitorKey
             {
                 Timeout = TimeSpan.FromSeconds(4),
             };
+            // The ESP32 dashboard has a deliberately small HTTP server. Force
+            // each short status/login request to close after its response so a
+            // stale reused connection cannot block its dashboard or main loop.
+            _http.DefaultRequestHeaders.ConnectionClose = true;
         }
 
         public void Dispose() => _http.Dispose();

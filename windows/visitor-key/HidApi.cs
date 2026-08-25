@@ -98,6 +98,13 @@ namespace LOKWOD.VisitorKey
             {
                 if (item.InterfaceNumber == preferredInterface) return item.Path;
             }
+            // Some Windows hidapi builds report interface_number as -1 while
+            // retaining the composite-interface number in the HID path.
+            string marker = $"&mi_{preferredInterface:X2}";
+            foreach (HidDeviceInfo item in devices)
+            {
+                if (item.Path.IndexOf(marker, StringComparison.OrdinalIgnoreCase) >= 0) return item.Path;
+            }
             throw new InvalidOperationException($"Dark Mount HID interface 0x{usagePage:X4} was not found.");
         }
     }

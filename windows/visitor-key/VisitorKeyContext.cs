@@ -10,6 +10,7 @@ namespace LOKWOD.VisitorKey
 {
     internal sealed class VisitorKeyContext : ApplicationContext
     {
+        private const string AppVersion = "1.0.4";
         private readonly NotifyIcon _tray;
         private readonly CancellationTokenSource _stop = new CancellationTokenSource();
         private readonly WindowsFormsSynchronizationContext _ui = new WindowsFormsSynchronizationContext();
@@ -28,6 +29,9 @@ namespace LOKWOD.VisitorKey
             _settings = SecureSettings.Load();
             SynchronizationContext.SetSynchronizationContext(_ui);
             var menu = new ContextMenuStrip();
+            var versionItem = menu.Items.Add($"LOKWOD Visitor Key v{AppVersion}");
+            versionItem.Enabled = false;
+            menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Open Visitor Light", null, (_, __) => OpenDashboard());
             menu.Items.Add("Test visitor key", null, async (_, __) => await ShowVisitorAsync(new VisitorStatus { Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), Site = "LOKWOD", Kind = "visit", WorkerConnected = true }));
             menu.Items.Add("Settings", null, (_, __) => Configure());
@@ -38,7 +42,7 @@ namespace LOKWOD.VisitorKey
             _tray = new NotifyIcon
             {
                 Icon = SystemIcons.Information,
-                Text = "LOKWOD Visitor Key",
+                Text = $"LOKWOD Visitor Key v{AppVersion}",
                 ContextMenuStrip = menu,
                 Visible = true,
             };
@@ -47,7 +51,7 @@ namespace LOKWOD.VisitorKey
             _watchdog.Interval = 15000;
             _watchdog.Tick += (_, __) => WatchdogTick();
             _watchdog.Start();
-            AppLog.Write("LOKWOD Visitor Key started.");
+            AppLog.Write($"LOKWOD Visitor Key v{AppVersion} started.");
 
             if (string.IsNullOrWhiteSpace(_settings.ProtectedPassword))
                 Configure();
@@ -160,6 +164,7 @@ namespace LOKWOD.VisitorKey
                         display.WriteImage(DarkMount.VisitorDisplayKey, image);
                         byte[] verified = display.ReadImage(DarkMount.VisitorDisplayKey);
                         if (!Equal(image, verified)) throw new IOException("The Visitor Key image did not verify after writing.");
+                        AppLog.Write("Visitor display key 4 updated and verified.");
                     }
                     catch (Exception exception) { displayFailure = exception; }
 
@@ -167,6 +172,7 @@ namespace LOKWOD.VisitorKey
                     {
                         using var lamps = new DarkMountLampArray();
                         lamps.Pulse(status.Color.R, status.Color.G, status.Color.B);
+                        AppLog.Write("Dark Mount keyboard-light flash completed.");
                     }
                     catch (Exception exception) { lightingFailure = exception; }
 
