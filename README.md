@@ -118,3 +118,8 @@ Flash over USB with:
 ```powershell
 pio run -e esp32-s3-devkitc-1 -t upload
 ```
+
+
+## Dark Mount Visitor Key (Windows)
+
+The Windows companion under `windows/visitor-key/` turns the upper-right be quiet! Dark Mount Display Key into a second Visitor Light. It shows the newest visitor or affiliate-click color, opens the private local dashboard when pressed, encrypts the dashboard password with Windows DPAPI, and backs up the original key image before its first write. It observes the existing authenticated ESP32 dashboard and does not consume or alter the ESP32 event queue.
