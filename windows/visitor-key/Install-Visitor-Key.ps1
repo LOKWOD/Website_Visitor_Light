@@ -14,11 +14,19 @@ if (-not (Test-Path -LiteralPath (Join-Path $PublishedPath 'LOKWODVisitorKey.exe
     throw "Published app not found at $PublishedPath"
 }
 
+# Files extracted from a browser-downloaded ZIP can inherit Windows'
+# Mark-of-the-Web. Remove it before running the helper or starting the tray app
+# so SmartScreen does not cancel the installation behind this script.
+Get-ChildItem -LiteralPath $PSScriptRoot -Recurse -File -ErrorAction SilentlyContinue |
+    Unblock-File -ErrorAction SilentlyContinue
+
 Get-Process -Name 'LOKWODVisitorKey' -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Milliseconds 400
 
 New-Item -ItemType Directory -Path $appRoot -Force | Out-Null
 Copy-Item -Path (Join-Path $PublishedPath '*') -Destination $appRoot -Recurse -Force
+Get-ChildItem -LiteralPath $appRoot -Recurse -File -ErrorAction SilentlyContinue |
+    Unblock-File -ErrorAction SilentlyContinue
 
 $installedHidApi = Join-Path $appRoot 'hidapi.dll'
 if (-not (Test-Path -LiteralPath $installedHidApi)) {
@@ -53,4 +61,4 @@ Start-Process -FilePath (Join-Path $appRoot 'LOKWODVisitorKey.exe') -WorkingDire
 
 Write-Host "Installed: $appRoot"
 Write-Host "Startup shortcut: $shortcutPath"
-Write-Host 'LOKWOD Visitor Key v1.0.2 is running.'
+Write-Host 'LOKWOD Visitor Key v1.0.3 is running.'

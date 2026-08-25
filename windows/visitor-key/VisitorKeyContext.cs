@@ -149,24 +149,33 @@ namespace LOKWOD.VisitorKey
             {
                 await Task.Run(() =>
                 {
-                    byte[] image = VisitorIconRenderer.Render(status.Color, status.Site, status.Kind == "affiliate_click");
-                    using (var display = new DarkMountDisplay())
+                    Exception? displayFailure = null;
+                    Exception? lightingFailure = null;
+
+                    try
                     {
+                        byte[] image = VisitorIconRenderer.Render(status.Color, status.Site, status.Kind == "affiliate_click");
+                        using var display = new DarkMountDisplay();
                         EnsureBackup(display);
                         display.WriteImage(DarkMount.VisitorDisplayKey, image);
                         byte[] verified = display.ReadImage(DarkMount.VisitorDisplayKey);
                         if (!Equal(image, verified)) throw new IOException("The Visitor Key image did not verify after writing.");
                     }
+                    catch (Exception exception) { displayFailure = exception; }
+
                     try
                     {
                         using var lamps = new DarkMountLampArray();
                         lamps.Pulse(status.Color.R, status.Color.G, status.Color.B);
                     }
-                    catch (InvalidOperationException)
-                    {
-                        // Some Windows 10 installations do not enumerate the optional
-                        // LampArray collection. The Display Key remains fully functional.
-                    }
+                    catch (Exception exception) { lightingFailure = exception; }
+
+                    if (displayFailure != null)
+                        AppLog.Write("The visitor popup worked, but the display-key image update failed.", displayFailure);
+                    if (lightingFailure != null)
+                        AppLog.Write("The visitor popup worked, but the keyboard-light flash failed.", lightingFailure);
+                    if (displayFailure != null && lightingFailure != null)
+                        throw new AggregateException("Both Dark Mount notification paths failed.", displayFailure, lightingFailure);
                 }, _stop.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) { }

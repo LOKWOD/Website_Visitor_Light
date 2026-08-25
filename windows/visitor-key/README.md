@@ -2,6 +2,12 @@
 
 Windows companion for the be quiet! Dark Mount and the LOKWOD Website Visitor Light.
 
+## v1.0.3 installer and flash repair
+
+- Removes Windows' downloaded-file block before testing or launching the companion.
+- Prevents a failed display-image write from suppressing the independent keyboard-light flash.
+- Keeps display key 4, the visitor-only sound/card, and silent connection recovery from v1.0.2.
+
 ## v1.0.2 visitor-only alerts
 
 - Startup, connection, reconnection, and watchdog activity is completely silent.
@@ -32,7 +38,7 @@ The app allows only QLink session commands and Display Key image read/write comm
 
 ## Install
 
-Download and extract `LOKWOD-Visitor-Key-v1.0.2-win-x64.zip`, then double-click `INSTALL.cmd`. The installer preserves the saved dashboard password and original key images, updates the Startup shortcut, and launches the repaired companion.
+Download and extract `LOKWOD-Visitor-Key-v1.0.3-win-x64.zip`, then double-click `INSTALL.cmd`. The installer preserves the saved dashboard password and original key images, removes Windows' downloaded-file block, updates the Startup shortcut, and launches the repaired companion.
 
 ## Build
 

@@ -8,5 +8,5 @@ if errorlevel 1 (
   exit /b 1
 )
 echo.
-echo LOKWOD Visitor Key v1.0.2 is installed and running.
+echo LOKWOD Visitor Key v1.0.3 is installed and running.
 timeout /t 4 >nul
