@@ -7,8 +7,8 @@ $installRoot = Join-Path $env:LOCALAPPDATA 'LOKWOD Visitor Key'
 $appRoot = Join-Path $installRoot 'app'
 $startupRoot = [Environment]::GetFolderPath('Startup')
 $shortcutPath = Join-Path $startupRoot 'LOKWOD Visitor Key.lnk'
-$sourceBackup = Join-Path $PSScriptRoot 'key8-original-raw.jpg'
-$installedBackup = Join-Path $installRoot 'key8-original.jpg'
+$sourceBackup = Join-Path $PSScriptRoot 'key4-original-raw.jpg'
+$installedBackup = Join-Path $installRoot 'key4-original.jpg'
 
 if (-not (Test-Path -LiteralPath (Join-Path $PublishedPath 'LOKWODVisitorKey.exe'))) {
     throw "Published app not found at $PublishedPath"
@@ -37,6 +37,11 @@ if ((Test-Path -LiteralPath $sourceBackup) -and -not (Test-Path -LiteralPath $in
     Copy-Item -LiteralPath $sourceBackup -Destination $installedBackup
 }
 
+& (Join-Path $appRoot 'LOKWODVisitorKey.exe') --migrate-key
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning 'The old lower Display Key could not be restored yet. The companion will retry when the next visitor arrives.'
+}
+
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($shortcutPath)
 $shortcut.TargetPath = Join-Path $appRoot 'LOKWODVisitorKey.exe'
@@ -48,4 +53,4 @@ Start-Process -FilePath (Join-Path $appRoot 'LOKWODVisitorKey.exe') -WorkingDire
 
 Write-Host "Installed: $appRoot"
 Write-Host "Startup shortcut: $shortcutPath"
-Write-Host 'LOKWOD Visitor Key v1.0.1 is running.'
+Write-Host 'LOKWOD Visitor Key v1.0.2 is running.'

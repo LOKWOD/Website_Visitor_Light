@@ -87,7 +87,7 @@ namespace LOKWOD.VisitorKey
                 if (_listener == null)
                 {
                     _listener = new DarkMountKeyListener();
-                    _listener.TopRightPressed += (_, __) => Ui(OpenDashboard);
+                    _listener.VisitorKeyPressed += (_, __) => Ui(OpenDashboard);
                 }
                 _client ??= CreateClient();
                 int generation = ++_pollGeneration;
@@ -95,11 +95,11 @@ namespace LOKWOD.VisitorKey
                 _lastPollAttemptUtc = DateTime.UtcNow;
                 _ = PollAsync(generation, _stop.Token);
                 AppLog.Write($"Visitor polling generation {generation} started for {_settings.DeviceUrl}.");
-                _tray.ShowBalloonTip(2500, "Visitor Key is running", "The upper-right Display Key now follows your Visitor Light.", ToolTipIcon.Info);
             }
             catch (Exception exception)
             {
-                _tray.ShowBalloonTip(4000, "Visitor Key needs attention", exception.Message, ToolTipIcon.Error);
+                _tray.Text = "LOKWOD Visitor Key — connection problem";
+                AppLog.Write("Visitor Key could not start polling; the watchdog will retry silently.", exception);
             }
         }
 
@@ -153,8 +153,8 @@ namespace LOKWOD.VisitorKey
                     using (var display = new DarkMountDisplay())
                     {
                         EnsureBackup(display);
-                        display.WriteImage(DarkMount.TopRightDisplayKey, image);
-                        byte[] verified = display.ReadImage(DarkMount.TopRightDisplayKey);
+                        display.WriteImage(DarkMount.VisitorDisplayKey, image);
+                        byte[] verified = display.ReadImage(DarkMount.VisitorDisplayKey);
                         if (!Equal(image, verified)) throw new IOException("The Visitor Key image did not verify after writing.");
                     }
                     try
@@ -182,6 +182,9 @@ namespace LOKWOD.VisitorKey
 
         private void ShowPopup(VisitorStatus status)
         {
+            try { System.Media.SystemSounds.Asterisk.Play(); }
+            catch (Exception exception) { AppLog.Write("The visitor notification sound could not play.", exception); }
+
             try
             {
                 _popup?.Close();
@@ -198,9 +201,17 @@ namespace LOKWOD.VisitorKey
 
         private static void EnsureBackup(DarkMountDisplay display)
         {
-            if (File.Exists(SecureSettings.BackupPath)) return;
             Directory.CreateDirectory(SecureSettings.AppDirectory);
-            File.WriteAllBytes(SecureSettings.BackupPath, display.ReadImage(DarkMount.TopRightDisplayKey));
+            if (!File.Exists(SecureSettings.BackupPath))
+                File.WriteAllBytes(SecureSettings.BackupPath, display.ReadImage(DarkMount.VisitorDisplayKey));
+
+            if (!File.Exists(SecureSettings.LegacyBackupPath) || File.Exists(SecureSettings.KeyMigrationMarkerPath)) return;
+            byte[] original = File.ReadAllBytes(SecureSettings.LegacyBackupPath);
+            display.WriteImage(DarkMount.LegacyVisitorDisplayKey, original);
+            if (!Equal(original, display.ReadImage(DarkMount.LegacyVisitorDisplayKey)))
+                throw new IOException("The original lower Display Key image did not verify after restoring it.");
+            File.WriteAllText(SecureSettings.KeyMigrationMarkerPath, DateTimeOffset.Now.ToString("O"));
+            AppLog.Write("Moved the visitor image to key 4 and restored the original key 8 image.");
         }
 
         private void RestoreOriginal()
@@ -209,8 +220,8 @@ namespace LOKWOD.VisitorKey
             {
                 if (!File.Exists(SecureSettings.BackupPath)) throw new FileNotFoundException("No original key image backup exists yet.");
                 using var display = new DarkMountDisplay();
-                display.WriteImage(DarkMount.TopRightDisplayKey, File.ReadAllBytes(SecureSettings.BackupPath));
-                _tray.ShowBalloonTip(2000, "Visitor Key", "The original upper-right key image was restored.", ToolTipIcon.Info);
+                display.WriteImage(DarkMount.VisitorDisplayKey, File.ReadAllBytes(SecureSettings.BackupPath));
+                _tray.Text = "LOKWOD Visitor Key — original key image restored";
             }
             catch (Exception exception) { MessageBox.Show(exception.Message, "Visitor Key", MessageBoxButtons.OK, MessageBoxIcon.Error); }
         }

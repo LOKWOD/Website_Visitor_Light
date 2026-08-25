@@ -2,6 +2,13 @@
 
 Windows companion for the be quiet! Dark Mount and the LOKWOD Website Visitor Light.
 
+## v1.0.2 visitor-only alerts
+
+- Startup, connection, reconnection, and watchdog activity is completely silent.
+- The corner card and Windows notification sound occur only for a real visitor, affiliate click, or a manual **Test visitor key**.
+- The visitor image now uses display key 4, directly above the previous key 8 position.
+- During installation, the original key 8 image is restored and key 4 is backed up before use.
+
 ## v1.0.1 reliability update
 
 - Automatically signs back in when the ESP32 dashboard session expires instead of silently stopping.
@@ -25,7 +32,7 @@ The app allows only QLink session commands and Display Key image read/write comm
 
 ## Install
 
-Download and extract `LOKWOD-Visitor-Key-v1.0.1-win-x64.zip`, then double-click `INSTALL.cmd`. The installer preserves the saved dashboard password and original key image, updates the Startup shortcut, and launches the repaired companion.
+Download and extract `LOKWOD-Visitor-Key-v1.0.2-win-x64.zip`, then double-click `INSTALL.cmd`. The installer preserves the saved dashboard password and original key images, updates the Startup shortcut, and launches the repaired companion.
 
 ## Build
 

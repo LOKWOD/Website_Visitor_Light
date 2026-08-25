@@ -8,7 +8,7 @@ namespace LOKWOD.VisitorKey
     {
         private readonly Thread _thread;
         private volatile bool _running = true;
-        internal event EventHandler? TopRightPressed;
+        internal event EventHandler? VisitorKeyPressed;
 
         internal DarkMountKeyListener()
         {
@@ -54,8 +54,8 @@ namespace LOKWOD.VisitorKey
                             continue;
                         }
                         if (read != 64) continue;
-                        if (frame[5] == 0x11 && frame[6] == 0x02 && frame[7] == DarkMount.TopRightDisplayKey && frame[9] == 0x01)
-                            TopRightPressed?.Invoke(this, EventArgs.Empty);
+                        if (frame[5] == 0x11 && frame[6] == 0x02 && frame[7] == DarkMount.VisitorDisplayKey && frame[9] == 0x01)
+                            VisitorKeyPressed?.Invoke(this, EventArgs.Empty);
                     }
                     catch (Exception exception)
                     {

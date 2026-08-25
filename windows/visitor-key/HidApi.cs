@@ -106,7 +106,10 @@ namespace LOKWOD.VisitorKey
     {
         internal const ushort VendorId = 0x373F;
         internal const ushort ProductId = 0x0001;
-        internal const byte TopRightDisplayKey = 0x74;
+        // The numpad module has two rows of four display keys. IDs are
+        // row-major: key 4 (0x70) is directly above key 8 (0x74).
+        internal const byte VisitorDisplayKey = 0x70;
+        internal const byte LegacyVisitorDisplayKey = 0x74;
         internal static readonly SemaphoreSlim DisplayIoGate = new SemaphoreSlim(1, 1);
     }
 }

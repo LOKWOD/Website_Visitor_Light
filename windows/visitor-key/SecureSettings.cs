@@ -31,7 +31,9 @@ namespace LOKWOD.VisitorKey
 
         internal static string AppDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LOKWOD Visitor Key");
         internal static string SettingsPath => Path.Combine(AppDirectory, "settings.json");
-        internal static string BackupPath => Path.Combine(AppDirectory, "key8-original.jpg");
+        internal static string BackupPath => Path.Combine(AppDirectory, "key4-original.jpg");
+        internal static string LegacyBackupPath => Path.Combine(AppDirectory, "key8-original.jpg");
+        internal static string KeyMigrationMarkerPath => Path.Combine(AppDirectory, "key8-restored-for-key4.txt");
 
         internal static AppSettings Load()
         {
