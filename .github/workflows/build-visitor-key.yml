@@ -1,0 +1,65 @@
+name: Build Visitor Key
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "windows/visitor-key/**"
+      - ".github/workflows/build-visitor-key.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      RELEASE_TAG: visitor-key-v1.0.1
+      RELEASE_ZIP: LOKWOD-Visitor-Key-v1.0.1-win-x64.zip
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Publish self-contained Windows app
+        shell: pwsh
+        run: |
+          dotnet publish windows/visitor-key/VisitorKey.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            --output build/visitor-key/publish
+
+      - name: Package installer
+        shell: pwsh
+        run: |
+          Copy-Item windows/visitor-key/INSTALL.cmd build/visitor-key/INSTALL.cmd
+          Copy-Item windows/visitor-key/Install-Visitor-Key.ps1 build/visitor-key/Install-Visitor-Key.ps1
+          Copy-Item windows/visitor-key/README.md build/visitor-key/README.md
+          Compress-Archive -Path build/visitor-key/* -DestinationPath $env:RELEASE_ZIP -Force
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LOKWOD-Visitor-Key-v1.0.1-win-x64
+          path: ${{ env.RELEASE_ZIP }}
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        if: github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if (gh release view $env:RELEASE_TAG 2>$null) {
+            gh release upload $env:RELEASE_TAG $env:RELEASE_ZIP --clobber
+          } else {
+            git tag $env:RELEASE_TAG
+            git push origin $env:RELEASE_TAG
+            gh release create $env:RELEASE_TAG $env:RELEASE_ZIP `
+              --title "LOKWOD Visitor Key v1.0.1" `
+              --notes "Reliability update: automatic session renewal, resilient Dark Mount reconnects, a persistent custom corner notification, a polling watchdog, and single-instance protection."
+          }

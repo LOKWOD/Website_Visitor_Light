@@ -1,15 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net5.0-windows</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>LOKWODVisitorKey</AssemblyName>
     <RootNamespace>LOKWOD.VisitorKey</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
   </PropertyGroup>
   <ItemGroup>
-    <None Include="C:\Program Files\IO Center\hidapi.dll" Link="hidapi.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(ProgramFiles)\IO Center\hidapi.dll" Link="hidapi.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(ProgramFiles)\IO Center\hidapi.dll')" />
   </ItemGroup>
 </Project>

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace LOKWOD.VisitorKey
 {
@@ -106,5 +107,6 @@ namespace LOKWOD.VisitorKey
         internal const ushort VendorId = 0x373F;
         internal const ushort ProductId = 0x0001;
         internal const byte TopRightDisplayKey = 0x74;
+        internal static readonly SemaphoreSlim DisplayIoGate = new SemaphoreSlim(1, 1);
     }
 }

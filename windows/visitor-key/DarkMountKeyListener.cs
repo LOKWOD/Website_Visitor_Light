@@ -6,16 +6,12 @@ namespace LOKWOD.VisitorKey
 {
     internal sealed class DarkMountKeyListener : IDisposable
     {
-        private readonly IntPtr _device;
         private readonly Thread _thread;
         private volatile bool _running = true;
         internal event EventHandler? TopRightPressed;
 
         internal DarkMountKeyListener()
         {
-            string path = HidApi.FindPath(0xFF00, 2);
-            _device = HidApi.hid_open_path(path);
-            if (_device == IntPtr.Zero) throw new IOException("The Dark Mount display-key interface could not be opened.");
             _thread = new Thread(ReadLoop) { IsBackground = true, Name = "Dark Mount display-key listener" };
             _thread.Start();
         }
@@ -23,20 +19,65 @@ namespace LOKWOD.VisitorKey
         public void Dispose()
         {
             _running = false;
-            _thread.Join(700);
-            HidApi.hid_close(_device);
+            _thread.Join(1500);
         }
 
         private void ReadLoop()
         {
             var frame = new byte[64];
-            while (_running)
+            IntPtr device = IntPtr.Zero;
+            try
             {
-                int read = HidApi.hid_read_timeout(_device, frame, (UIntPtr)frame.Length, 250);
-                if (read != 64) continue;
-                if (frame[5] == 0x11 && frame[6] == 0x02 && frame[7] == DarkMount.TopRightDisplayKey && frame[9] == 0x01)
-                    TopRightPressed?.Invoke(this, EventArgs.Empty);
+                while (_running)
+                {
+                    try
+                    {
+                        if (device == IntPtr.Zero)
+                        {
+                            string path = HidApi.FindPath(0xFF00, 2);
+                            device = HidApi.hid_open_path(path);
+                            if (device == IntPtr.Zero) throw new IOException("The Dark Mount display-key interface could not be opened.");
+                            AppLog.Write("Dark Mount display-key listener connected.");
+                        }
+
+                        int read;
+                        DarkMount.DisplayIoGate.Wait();
+                        try { read = HidApi.hid_read_timeout(device, frame, (UIntPtr)frame.Length, 250); }
+                        finally { DarkMount.DisplayIoGate.Release(); }
+
+                        if (read < 0)
+                        {
+                            AppLog.Write("Dark Mount display-key listener lost its HID connection.");
+                            HidApi.hid_close(device);
+                            device = IntPtr.Zero;
+                            WaitBeforeReconnect();
+                            continue;
+                        }
+                        if (read != 64) continue;
+                        if (frame[5] == 0x11 && frame[6] == 0x02 && frame[7] == DarkMount.TopRightDisplayKey && frame[9] == 0x01)
+                            TopRightPressed?.Invoke(this, EventArgs.Empty);
+                    }
+                    catch (Exception exception)
+                    {
+                        AppLog.Write("Dark Mount display-key listener will reconnect.", exception);
+                        if (device != IntPtr.Zero)
+                        {
+                            HidApi.hid_close(device);
+                            device = IntPtr.Zero;
+                        }
+                        WaitBeforeReconnect();
+                    }
+                }
             }
+            finally
+            {
+                if (device != IntPtr.Zero) HidApi.hid_close(device);
+            }
+        }
+
+        private void WaitBeforeReconnect()
+        {
+            for (int attempt = 0; attempt < 10 && _running; attempt++) Thread.Sleep(100);
         }
     }
 }

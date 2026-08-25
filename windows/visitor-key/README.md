@@ -2,6 +2,17 @@
 
 Windows companion for the be quiet! Dark Mount and the LOKWOD Website Visitor Light.
 
+## v1.0.1 reliability update
+
+- Automatically signs back in when the ESP32 dashboard session expires instead of silently stopping.
+- Uses a dedicated always-on-top corner notification that Windows cannot throttle like repeated tray balloons.
+- Keeps the corner notification working even when the keyboard is temporarily disconnected or busy.
+- Reconnects the Dark Mount key listener after USB resets, sleep, or wake.
+- Serializes Display Key commands so the key listener cannot consume an image-transfer response.
+- Restarts a stalled network poller and refreshes its HTTP connection after repeated failures.
+- Prevents two copies of the companion from competing for the same keyboard.
+- Writes a small rotating diagnostic log available from the tray menu.
+
 - Uses the upper-right Display Key (hardware key 8 / `0x74`).
 - Shows the color and name of the newest website visitor or affiliate click.
 - Pulses the keyboard lighting three times in the same site color when the optional LampArray interface is available. On this Windows 10 PC, the screen button itself remains the visitor indicator.
@@ -12,12 +23,16 @@ Windows companion for the be quiet! Dark Mount and the LOKWOD Website Visitor Li
 
 The app allows only QLink session commands and Display Key image read/write commands. It does not implement firmware, bootloader, factory-reset, or configuration commands.
 
+## Install
+
+Download and extract `LOKWOD-Visitor-Key-v1.0.1-win-x64.zip`, then double-click `INSTALL.cmd`. The installer preserves the saved dashboard password and original key image, updates the Startup shortcut, and launches the repaired companion.
+
 ## Build
 
-Requires the installed be quiet! IO Center `hidapi.dll` and the .NET 5 SDK.
+Requires the .NET 8 SDK. A local Windows publish copies `hidapi.dll` from be quiet! IO Center when available; the packaged installer can also copy it from the installed IO Center at install time.
 
 ```powershell
-dotnet publish -c Release -r win-x64 --self-contained false
+dotnet publish -c Release -r win-x64 --self-contained true
 ```
 
 Run `Install-Visitor-Key.ps1` after publishing. It installs to the current user's Local AppData folder, preserves the first backup of key 8, and creates a current-user Startup shortcut.

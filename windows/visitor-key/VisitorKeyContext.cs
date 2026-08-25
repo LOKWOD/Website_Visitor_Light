@@ -13,10 +13,15 @@ namespace LOKWOD.VisitorKey
         private readonly NotifyIcon _tray;
         private readonly CancellationTokenSource _stop = new CancellationTokenSource();
         private readonly WindowsFormsSynchronizationContext _ui = new WindowsFormsSynchronizationContext();
+        private readonly SemaphoreSlim _visitorGate = new SemaphoreSlim(1, 1);
+        private readonly System.Windows.Forms.Timer _watchdog = new System.Windows.Forms.Timer();
         private AppSettings _settings;
         private VisitorLightClient? _client;
         private DarkMountKeyListener? _listener;
+        private VisitorPopupForm? _popup;
         private int _pollGeneration;
+        private int _consecutiveFailures;
+        private DateTime _lastPollAttemptUtc = DateTime.UtcNow;
 
         internal VisitorKeyContext()
         {
@@ -27,6 +32,7 @@ namespace LOKWOD.VisitorKey
             menu.Items.Add("Test visitor key", null, async (_, __) => await ShowVisitorAsync(new VisitorStatus { Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), Site = "LOKWOD", Kind = "visit", WorkerConnected = true }));
             menu.Items.Add("Settings", null, (_, __) => Configure());
             menu.Items.Add("Restore original key image", null, (_, __) => RestoreOriginal());
+            menu.Items.Add("Open diagnostic log", null, (_, __) => OpenLog());
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Exit", null, (_, __) => ExitThread());
             _tray = new NotifyIcon
@@ -38,6 +44,11 @@ namespace LOKWOD.VisitorKey
             };
             _tray.DoubleClick += (_, __) => OpenDashboard();
 
+            _watchdog.Interval = 15000;
+            _watchdog.Tick += (_, __) => WatchdogTick();
+            _watchdog.Start();
+            AppLog.Write("LOKWOD Visitor Key started.");
+
             if (string.IsNullOrWhiteSpace(_settings.ProtectedPassword))
                 Configure();
             if (!string.IsNullOrWhiteSpace(_settings.ProtectedPassword))
@@ -47,10 +58,15 @@ namespace LOKWOD.VisitorKey
         protected override void ExitThreadCore()
         {
             _stop.Cancel();
+            _watchdog.Stop();
+            _watchdog.Dispose();
+            _popup?.Close();
+            _popup?.Dispose();
             _listener?.Dispose();
-            _client?.Dispose();
+            Interlocked.Exchange(ref _client, null)?.Dispose();
             _tray.Visible = false;
             _tray.Dispose();
+            AppLog.Write("LOKWOD Visitor Key stopped.");
             base.ExitThreadCore();
         }
 
@@ -59,8 +75,8 @@ namespace LOKWOD.VisitorKey
             using var form = new SetupForm(_settings);
             if (form.ShowDialog() != DialogResult.OK || form.SavedSettings == null) return;
             _settings = form.SavedSettings;
-            _client?.Dispose();
-            _client = null;
+            ++_pollGeneration;
+            Interlocked.Exchange(ref _client, null)?.Dispose();
             Start();
         }
 
@@ -73,9 +89,12 @@ namespace LOKWOD.VisitorKey
                     _listener = new DarkMountKeyListener();
                     _listener.TopRightPressed += (_, __) => Ui(OpenDashboard);
                 }
-                _client ??= new VisitorLightClient(_settings.DeviceUrl, SecureSettings.Unprotect(_settings.ProtectedPassword));
+                _client ??= CreateClient();
                 int generation = ++_pollGeneration;
+                _consecutiveFailures = 0;
+                _lastPollAttemptUtc = DateTime.UtcNow;
                 _ = PollAsync(generation, _stop.Token);
+                AppLog.Write($"Visitor polling generation {generation} started for {_settings.DeviceUrl}.");
                 _tray.ShowBalloonTip(2500, "Visitor Key is running", "The upper-right Display Key now follows your Visitor Light.", ToolTipIcon.Info);
             }
             catch (Exception exception)
@@ -90,11 +109,16 @@ namespace LOKWOD.VisitorKey
             {
                 try
                 {
-                    VisitorStatus status = await _client.GetStatusAsync(cancellationToken).ConfigureAwait(false);
+                    _lastPollAttemptUtc = DateTime.UtcNow;
+                    VisitorLightClient? client = _client;
+                    if (client == null) return;
+                    VisitorStatus status = await client.GetStatusAsync(cancellationToken).ConfigureAwait(false);
+                    _consecutiveFailures = 0;
                     if (status.Timestamp > 0 && status.Timestamp != _settings.LastEventTimestamp)
                     {
                         _settings.LastEventTimestamp = status.Timestamp;
-                        SecureSettings.Save(_settings);
+                        try { SecureSettings.Save(_settings); }
+                        catch (Exception exception) { AppLog.Write("Could not save the newest visitor timestamp.", exception); }
                         await ShowVisitorAsync(status).ConfigureAwait(false);
                     }
                     Ui(() => _tray.Text = status.WorkerConnected ? "LOKWOD Visitor Key — connected" : "LOKWOD Visitor Key — Visitor Light offline");
@@ -102,8 +126,13 @@ namespace LOKWOD.VisitorKey
                 catch (OperationCanceledException) { return; }
                 catch (Exception exception)
                 {
+                    int failures = Interlocked.Increment(ref _consecutiveFailures);
                     Ui(() => _tray.Text = "LOKWOD Visitor Key — connection problem");
                     Debug.WriteLine(exception);
+                    if (failures == 1 || failures % 10 == 0)
+                        AppLog.Write($"Visitor polling failed ({failures} consecutive failures).", exception);
+                    if (failures >= 3 && generation == _pollGeneration)
+                        ReplaceClient(generation);
                 }
                 try { await Task.Delay(2000, cancellationToken).ConfigureAwait(false); }
                 catch (OperationCanceledException) { return; }
@@ -112,29 +141,59 @@ namespace LOKWOD.VisitorKey
 
         private async Task ShowVisitorAsync(VisitorStatus status)
         {
-            await Task.Run(() =>
-            {
-                byte[] image = VisitorIconRenderer.Render(status.Color, status.Site, status.Kind == "affiliate_click");
-                using (var display = new DarkMountDisplay())
-                {
-                    EnsureBackup(display);
-                    display.WriteImage(DarkMount.TopRightDisplayKey, image);
-                    byte[] verified = display.ReadImage(DarkMount.TopRightDisplayKey);
-                    if (!Equal(image, verified)) throw new IOException("The Visitor Key image did not verify after writing.");
-                }
-                try
-                {
-                    using var lamps = new DarkMountLampArray();
-                    lamps.Pulse(status.Color.R, status.Color.G, status.Color.B);
-                }
-                catch (InvalidOperationException)
-                {
-                    // Some Windows 10 installations do not enumerate the optional
-                    // LampArray collection. The Display Key remains fully functional.
-                }
-            }).ConfigureAwait(false);
+            Ui(() => ShowPopup(status));
 
-            Ui(() => _tray.ShowBalloonTip(2500, status.Kind == "affiliate_click" ? "Affiliate click" : "Website visitor", string.IsNullOrWhiteSpace(status.Site) ? "A visitor arrived." : status.Site, ToolTipIcon.Info));
+            try { await _visitorGate.WaitAsync(_stop.Token).ConfigureAwait(false); }
+            catch (OperationCanceledException) { return; }
+            try
+            {
+                await Task.Run(() =>
+                {
+                    byte[] image = VisitorIconRenderer.Render(status.Color, status.Site, status.Kind == "affiliate_click");
+                    using (var display = new DarkMountDisplay())
+                    {
+                        EnsureBackup(display);
+                        display.WriteImage(DarkMount.TopRightDisplayKey, image);
+                        byte[] verified = display.ReadImage(DarkMount.TopRightDisplayKey);
+                        if (!Equal(image, verified)) throw new IOException("The Visitor Key image did not verify after writing.");
+                    }
+                    try
+                    {
+                        using var lamps = new DarkMountLampArray();
+                        lamps.Pulse(status.Color.R, status.Color.G, status.Color.B);
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // Some Windows 10 installations do not enumerate the optional
+                        // LampArray collection. The Display Key remains fully functional.
+                    }
+                }, _stop.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception exception)
+            {
+                // The on-screen alert is deliberately independent of the keyboard.
+                // A temporary USB/HID problem must not swallow a visitor notification.
+                AppLog.Write("The corner notification was shown, but the keyboard update failed.", exception);
+                Ui(() => _tray.Text = "LOKWOD Visitor Key — keyboard reconnecting");
+            }
+            finally { _visitorGate.Release(); }
+        }
+
+        private void ShowPopup(VisitorStatus status)
+        {
+            try
+            {
+                _popup?.Close();
+                _popup?.Dispose();
+                _popup = new VisitorPopupForm(status);
+                _popup.Show();
+            }
+            catch (Exception exception)
+            {
+                AppLog.Write("Custom corner notification failed; using the Windows tray notification.", exception);
+                _tray.ShowBalloonTip(4000, status.Kind == "affiliate_click" ? "Affiliate click" : "Website visitor", string.IsNullOrWhiteSpace(status.Site) ? "A visitor arrived." : status.Site, ToolTipIcon.Info);
+            }
         }
 
         private static void EnsureBackup(DarkMountDisplay display)
@@ -162,6 +221,45 @@ namespace LOKWOD.VisitorKey
             catch (Exception exception) { MessageBox.Show(exception.Message, "Visitor Key", MessageBoxButtons.OK, MessageBoxIcon.Error); }
         }
 
+        private void OpenLog()
+        {
+            try
+            {
+                Directory.CreateDirectory(SecureSettings.AppDirectory);
+                if (!File.Exists(AppLog.Path)) AppLog.Write("Diagnostic log opened.");
+                Process.Start(new ProcessStartInfo { FileName = AppLog.Path, UseShellExecute = true });
+            }
+            catch (Exception exception) { MessageBox.Show(exception.Message, "Visitor Key", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        }
+
+        private VisitorLightClient CreateClient() =>
+            new VisitorLightClient(_settings.DeviceUrl, SecureSettings.Unprotect(_settings.ProtectedPassword));
+
+        private void ReplaceClient(int generation)
+        {
+            if (_stop.IsCancellationRequested || generation != _pollGeneration) return;
+            try
+            {
+                VisitorLightClient replacement = CreateClient();
+                VisitorLightClient? previous = Interlocked.Exchange(ref _client, replacement);
+                previous?.Dispose();
+                Interlocked.Exchange(ref _consecutiveFailures, 0);
+                AppLog.Write("Recreated the Visitor Light network client after repeated failures.");
+            }
+            catch (Exception exception) { AppLog.Write("Could not recreate the Visitor Light network client.", exception); }
+        }
+
+        private void WatchdogTick()
+        {
+            if (_stop.IsCancellationRequested || string.IsNullOrWhiteSpace(_settings.ProtectedPassword)) return;
+            if (DateTime.UtcNow - _lastPollAttemptUtc <= TimeSpan.FromSeconds(20)) return;
+
+            AppLog.Write("Polling watchdog restarted the Visitor Light connection.");
+            ++_pollGeneration;
+            Interlocked.Exchange(ref _client, null)?.Dispose();
+            Start();
+        }
+
         private static bool Equal(byte[] left, byte[] right)
         {
             if (left.Length != right.Length) return false;
@@ -172,7 +270,11 @@ namespace LOKWOD.VisitorKey
         private void Ui(Action action)
         {
             if (_stop.IsCancellationRequested) return;
-            _ui.Post(_ => action(), null);
+            _ui.Post(_ =>
+            {
+                try { action(); }
+                catch (Exception exception) { AppLog.Write("A tray user-interface action failed.", exception); }
+            }, null);
         }
     }
 }

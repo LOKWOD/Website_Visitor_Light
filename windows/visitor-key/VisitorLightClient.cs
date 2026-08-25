@@ -48,7 +48,16 @@ namespace LOKWOD.VisitorKey
         {
             _baseUrl = baseUrl.TrimEnd('/');
             _password = password;
-            _http = new HttpClient(new HttpClientHandler { CookieContainer = _cookies, AllowAutoRedirect = false })
+            var handler = new SocketsHttpHandler
+            {
+                CookieContainer = _cookies,
+                UseCookies = true,
+                AllowAutoRedirect = false,
+                ConnectTimeout = TimeSpan.FromSeconds(4),
+                PooledConnectionIdleTimeout = TimeSpan.FromMinutes(1),
+                PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+            };
+            _http = new HttpClient(handler)
             {
                 Timeout = TimeSpan.FromSeconds(4),
             };
@@ -59,25 +68,39 @@ namespace LOKWOD.VisitorKey
         internal async Task<VisitorStatus> GetStatusAsync(CancellationToken cancellationToken)
         {
             if (!_authenticated) await LoginAsync(cancellationToken).ConfigureAwait(false);
-            HttpResponseMessage response = await _http.GetAsync(_baseUrl + "/api/status", cancellationToken).ConfigureAwait(false);
-            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            HttpResponseMessage response = await GetStatusResponseAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                _authenticated = false;
-                await LoginAsync(cancellationToken).ConfigureAwait(false);
-                response = await _http.GetAsync(_baseUrl + "/api/status", cancellationToken).ConfigureAwait(false);
+                // The ESP32 sends a redirect to /login when the dashboard session
+                // expires. The original companion only handled HTTP 401, so it
+                // silently stopped receiving visitors after that first expiry.
+                if (RequiresLogin(response))
+                {
+                    response.Dispose();
+                    _authenticated = false;
+                    await LoginAsync(cancellationToken).ConfigureAwait(false);
+                    response = await GetStatusResponseAsync(cancellationToken).ConfigureAwait(false);
+                }
+                if (RequiresLogin(response))
+                    throw new UnauthorizedAccessException("Visitor Light dashboard login expired and could not be renewed.");
+
+                response.EnsureSuccessStatusCode();
+                string json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                using JsonDocument document = JsonDocument.Parse(json);
+                JsonElement root = document.RootElement;
+                return new VisitorStatus
+                {
+                    Timestamp = ReadLong(root, "last_event_timestamp"),
+                    Site = ReadString(root, "visitor_site"),
+                    Kind = ReadString(root, "visitor_kind"),
+                    WorkerConnected = ReadBoolean(root, "worker_connected"),
+                };
             }
-            response.EnsureSuccessStatusCode();
-            string json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-            using JsonDocument document = JsonDocument.Parse(json);
-            JsonElement root = document.RootElement;
-            return new VisitorStatus
-            {
-                Timestamp = ReadLong(root, "last_event_timestamp"),
-                Site = ReadString(root, "visitor_site"),
-                Kind = ReadString(root, "visitor_kind"),
-                WorkerConnected = ReadBoolean(root, "worker_connected"),
-            };
+            finally { response.Dispose(); }
         }
+
+        private Task<HttpResponseMessage> GetStatusResponseAsync(CancellationToken cancellationToken) =>
+            _http.GetAsync(_baseUrl + "/api/status", HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
         private async Task LoginAsync(CancellationToken cancellationToken)
         {
@@ -87,10 +110,18 @@ namespace LOKWOD.VisitorKey
                 new KeyValuePair<string?, string?>("password", _password),
                 new KeyValuePair<string?, string?>("remember", "1"),
             });
-            HttpResponseMessage response = await _http.PostAsync(_baseUrl + "/login", body, cancellationToken).ConfigureAwait(false);
+            using HttpResponseMessage response = await _http.PostAsync(_baseUrl + "/login", body, cancellationToken).ConfigureAwait(false);
             if (response.StatusCode != HttpStatusCode.SeeOther && response.StatusCode != HttpStatusCode.Redirect)
                 throw new UnauthorizedAccessException("Visitor Light dashboard login failed. Check the saved password.");
             _authenticated = true;
+        }
+
+        private static bool RequiresLogin(HttpResponseMessage response)
+        {
+            int status = (int)response.StatusCode;
+            return response.StatusCode == HttpStatusCode.Unauthorized ||
+                   response.StatusCode == HttpStatusCode.Forbidden ||
+                   (status >= 300 && status <= 399);
         }
 
         private static string ReadString(JsonElement root, string property) =>

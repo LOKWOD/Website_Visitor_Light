@@ -15,28 +15,54 @@ namespace LOKWOD.VisitorKey
         private const int ReadChunk = 54;
         private const int WriteChunk = 49;
         private const int MaxImageBytes = 32 * 1024;
-        private readonly IntPtr _device;
+        private IntPtr _device;
+        private bool _ownsIoGate;
+        private bool _disposed;
         private byte _sequence = 0x30;
         private byte _session;
 
         internal DarkMountDisplay()
         {
-            string path = HidApi.FindPath(0xFF00, 2);
-            _device = HidApi.hid_open_path(path);
-            if (_device == IntPtr.Zero) throw new IOException("The Dark Mount vendor interface could not be opened. Close IO Center and try again.");
-            Drain();
-            OpenSession();
+            DarkMount.DisplayIoGate.Wait();
+            _ownsIoGate = true;
+            try
+            {
+                string path = HidApi.FindPath(0xFF00, 2);
+                _device = HidApi.hid_open_path(path);
+                if (_device == IntPtr.Zero) throw new IOException("The Dark Mount vendor interface could not be opened. Close IO Center and try again.");
+                Drain();
+                OpenSession();
+            }
+            catch
+            {
+                if (_device != IntPtr.Zero)
+                {
+                    HidApi.hid_close(_device);
+                    _device = IntPtr.Zero;
+                }
+                ReleaseIoGate();
+                throw;
+            }
         }
 
         public void Dispose()
         {
-            if (_device == IntPtr.Zero) return;
-            if (_session != 0)
+            if (_disposed) return;
+            _disposed = true;
+            try
             {
-                try { Exchange(0x01, 0x02, Array.Empty<byte>(), _session); } catch { }
-                _session = 0;
+                if (_device != IntPtr.Zero)
+                {
+                    if (_session != 0)
+                    {
+                        try { Exchange(0x01, 0x02, Array.Empty<byte>(), _session); } catch { }
+                        _session = 0;
+                    }
+                    HidApi.hid_close(_device);
+                    _device = IntPtr.Zero;
+                }
             }
-            HidApi.hid_close(_device);
+            finally { ReleaseIoGate(); }
         }
 
         internal byte[] ReadImage(byte keyId)
@@ -158,6 +184,13 @@ namespace LOKWOD.VisitorKey
             _sequence++;
             if (_sequence == 0) _sequence = 1;
             return _sequence;
+        }
+
+        private void ReleaseIoGate()
+        {
+            if (!_ownsIoGate) return;
+            _ownsIoGate = false;
+            DarkMount.DisplayIoGate.Release();
         }
 
         private static bool Allowed(byte group, byte command) =>
