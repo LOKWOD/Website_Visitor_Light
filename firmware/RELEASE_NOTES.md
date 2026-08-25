@@ -1,5 +1,11 @@
 # Visitor Light Firmware Releases
 
+## v1.1.12
+
+- Closes local dashboard HTTP connections after each response so one browser cannot monopolize the ESP32 web server.
+- Allows the browser dashboard and Windows Visitor Key companion to poll the ESP32 reliably at the same time.
+- Keeps visitor flashing, history, affiliate-click alerts, heartbeat, saved credentials, and Cloudflare-proxied OTA behavior unchanged.
+
 ## v1.1.11
 
 - Adds a private Last 50 Visitors dashboard table.

@@ -2,7 +2,9 @@
 
 Target board: QIQIAZI / ESP32-S3-DevKitC-1 N16R8 with the onboard WS2812 RGB LED on GPIO 48.
 
-## Current release: v1.1.11
+## Current release: v1.1.12
+
+v1.1.12 closes each local dashboard HTTP connection after sending its response. This prevents a browser keep-alive connection from occupying the ESP32 web server and delaying or blocking the Windows Visitor Key companion's login and status requests.
 
 v1.1.11 adds a private Last 50 Visitors table with timestamp, full visitor IP, source/referrer, destination site/page/title, and approximate location. The ESP32 proxies the authenticated Worker history feed so the device token is never sent to the dashboard browser.
 

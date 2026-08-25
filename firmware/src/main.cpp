@@ -23,7 +23,7 @@ using LokwodSecureClient = WiFiClientSecure;
 #include "trusted_roots.h"
 
 namespace AppConfig {
-constexpr char kFirmwareVersion[] = "1.1.11";
+constexpr char kFirmwareVersion[] = "1.1.12";
 constexpr char kHostname[] = "lokwod-visitor-light";
 constexpr char kSetupAccessPoint[] = "LOKWOD-Visitor-Light";
 constexpr uint8_t kRgbPin = 48;
@@ -923,6 +923,13 @@ bool dashboardSessionIsValid() {
   return cookies.indexOf("lokwod_session=" + dashboardSessionToken) >= 0;
 }
 
+void closeDashboardConnectionAfterResponse() {
+  // Arduino WebServer services one active client at a time. Explicitly close
+  // each local dashboard response so a browser keep-alive connection cannot
+  // starve the Windows visitor companion (or another dashboard tab).
+  webServer.sendHeader("Connection", "close");
+}
+
 void setDashboardSessionCookie(bool remember) {
   String cookie = "lokwod_session=" + dashboardSessionToken + "; Path=/; HttpOnly; SameSite=Strict";
   if (remember) cookie += "; Max-Age=2592000";
@@ -934,6 +941,7 @@ void clearDashboardSessionCookie() {
 }
 
 bool requireDashboardAuthorization() {
+  closeDashboardConnectionAfterResponse();
   if (dashboardSessionIsValid()) return true;
   webServer.sendHeader("Cache-Control", "no-store");
   webServer.send(401, "text/html; charset=utf-8", loginPage());
@@ -941,6 +949,7 @@ bool requireDashboardAuthorization() {
 }
 
 void redirectHome() {
+  closeDashboardConnectionAfterResponse();
   webServer.sendHeader("Location", "/", true);
   webServer.send(303, "text/plain", "");
 }
@@ -1022,6 +1031,7 @@ void configureWebServer() {
   webServer.collectHeaders(headerKeys, 1);
 
   webServer.on("/login", HTTP_GET, []() {
+    closeDashboardConnectionAfterResponse();
     if (dashboardSessionIsValid()) {
       redirectHome();
       return;
@@ -1031,6 +1041,7 @@ void configureWebServer() {
   });
 
   webServer.on("/login", HTTP_POST, []() {
+    closeDashboardConnectionAfterResponse();
     const String username = webServer.hasArg("username") ? webServer.arg("username") : "";
     const String password = webServer.hasArg("password") ? webServer.arg("password") : "";
     if (username != "admin" || password != dashboardPassword) {
@@ -1043,6 +1054,7 @@ void configureWebServer() {
   });
 
   webServer.on("/logout", HTTP_GET, []() {
+    closeDashboardConnectionAfterResponse();
     clearDashboardSessionCookie();
     webServer.sendHeader("Location", "/login", true);
     webServer.send(303, "text/plain", "Signed out");

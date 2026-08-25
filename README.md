@@ -2,7 +2,9 @@
 
 ESP32-S3 website visitor indicator using the onboard WS2812 RGB LED on GPIO 48.
 
-## Current firmware: v1.1.11
+## Current firmware: v1.1.12
+
+v1.1.12 prevents the local dashboard's persistent browser connection from monopolizing the ESP32 web server. Every authenticated dashboard, login, status, and history response now closes its HTTP connection after delivery so the browser and Windows Visitor Key companion can poll reliably at the same time.
 
 v1.1.11 adds a private **Last 50 visitors** table to the authenticated local dashboard. Each new event records its timestamp, full visitor IP address, approximate city/region/country, referrer/source, destination website, page path, page title or affiliate link, visitor ID, and event type. The browser never receives the private Worker device token; the ESP32 uses it to proxy the history from the Worker into the password-protected dashboard.
 

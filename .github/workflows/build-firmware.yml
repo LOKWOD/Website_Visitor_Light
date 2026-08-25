@@ -1,11 +1,6 @@
 name: Build and publish visitor light firmware
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'firmware/**'
-      - '.github/workflows/build-firmware.yml'
   pull_request:
     paths:
       - 'firmware/**'
